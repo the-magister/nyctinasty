@@ -1,3 +1,5 @@
+// You'll need to add http://arduino.esp8266.com/stable/package_esp8266com_index.json to the Additional Board Managers URL entry in Preferences.
+// Compile for Adafruit HUZZAH ESP8266, 80 Mhz, 921600 Upload Speed, 4M (3M SPIFFS). 
 #include <Streaming.h>
 #include <Wire.h>
 #include <Adafruit_VL53L0X.h>
@@ -42,7 +44,7 @@ void loop(void) {
     lox[i].rangingTest(&range[i], false);
     Serial << "Ranging " << i << ": ";
     
-    if( range[i].RangeStatus !=4 ) {
+    if( range[i].RangeStatus != 4 ) {
       Serial << range[i].RangeMilliMeter << " mm." << endl;
     } else {
       Serial << "out of range." << endl;
