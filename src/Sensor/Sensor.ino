@@ -28,6 +28,8 @@ PubSubClient mqtt;
 
 // pinouts on the NodeMCU:
 // "C:\Users\MikeD\AppData\Local\Arduino15\packages\esp8266\hardware\esp8266\2.3.0\variants\nodemcu\pins_arduino.h"
+#define BLUE_LED D4 // HIGH=off
+#define RED_LED D0 // HIGH=off
 
 // handy helper 
 void selectLOX(uint8_t i) {
