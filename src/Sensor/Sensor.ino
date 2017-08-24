@@ -26,10 +26,10 @@ const byte topicOffset = 0; // should we ever need to extend this to more uCs, t
 WiFiClient espClient;
 PubSubClient mqtt;
 
-// pinouts on the NodeMCU:
+// labels for the pins on the NodeMCU are weird:
 // "C:\Users\MikeD\AppData\Local\Arduino15\packages\esp8266\hardware\esp8266\2.3.0\variants\nodemcu\pins_arduino.h"
-#define BLUE_LED D4 // HIGH=off
-#define RED_LED D0 // HIGH=off
+#define BLUE_LED 2 // labeled "D4" on NodeMCU boards; HIGH=off
+#define RED_LED 16 // labeled "D0" on NodeMCU boards; HIGH=off
 
 // handy helper 
 void selectLOX(uint8_t i) {
@@ -56,7 +56,8 @@ void setup(void)  {
     }
   }
 
-  pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED pin as an output
+  pinMode(BLUE_LED, OUTPUT);  // Shows sensor activity; flashing with polling
+  pinMode(RED_LED, OUTPUT);   // Shows WiFi activity; solid on when there's an issue; flashing with MQTT messages
 
   // don't allow the WiFi module to sleep.  
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
@@ -85,21 +86,23 @@ void loop(void) {
   unsigned long tic = millis();
   // poll the sensors
   for( byte i=0;i<NLOX;i++) {
-    Serial << "Ranging " << i << ": ";
-
-    digitalWrite(LED_BUILTIN, HIGH);
-    selectLOX(i); // select the sensor
-    lox[i].rangingTest(&range[i], false); // ask it to range once
-    digitalWrite(LED_BUILTIN, LOW);
-    
-    if( range[i].RangeStatus != 4 ) {
-      Serial << range[i].RangeMilliMeter << " mm." << endl;  
-    } else {
-      Serial << "out of range." << endl;
+    if( lox[i].Status == VL53L0X_ERROR_NONE ) {
+      Serial << "Ranging " << i << ": ";
+  
+      digitalWrite(BLUE_LED, LOW);
+      selectLOX(i); // select the sensor
+      lox[i].rangingTest(&range[i], false); // ask it to range once
+      digitalWrite(BLUE_LED, HIGH);
+      
+      if( range[i].RangeStatus != 4 ) {
+        Serial << range[i].RangeMilliMeter << " mm." << endl;  
+      } else {
+        Serial << "out of range." << endl;
+      }
+      
+      // publish
+      publishRange(i);
     }
-    
-    // publish
-    publishRange(i);
   }
   unsigned long toc = millis();
   Serial << "Ranging Duration (ms): " << toc-tic << "\t fps (Hz):" << 1000/(toc-tic) << endl;
@@ -109,6 +112,11 @@ void loop(void) {
 void publishRange(byte index) {
   if( !mqtt.connected() ) return;
   
+  // toggle the LED when we send a message
+  static boolean ledState = false;
+  ledState = !ledState;
+  digitalWrite(RED_LED, ledState);
+
   String topic = "skein/range/" + (index+(NLOX*topicOffset));
 
   int r = outOfRange;
@@ -123,7 +131,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   // toggle the LED when we get a new message
   static boolean ledState = false;
   ledState = !ledState;
-  digitalWrite(LED_BUILTIN, ledState);
+  digitalWrite(RED_LED, ledState);
 
   // String class is much easier to work with
   String t = topic;
@@ -143,7 +151,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 }
 
 void connectWiFi() {
-  digitalWrite(LED_BUILTIN, HIGH);
+  digitalWrite(RED_LED, LOW);
 
   // Update these.
 //  const char* ssid = "Looney_Ext";
@@ -151,7 +159,7 @@ void connectWiFi() {
   const char* ssid = "AsOne";
   const char* password = "fuckthapolice";
 
-  static Metro connectInterval(500UL);
+  static Metro connectInterval(5000UL);
   if ( connectInterval.check() ) {
 
     Serial << F("Attempting WiFi connection to ") << ssid << endl;
@@ -164,7 +172,7 @@ void connectWiFi() {
 
 
 void connectMQTT() {
-  digitalWrite(LED_BUILTIN, HIGH);
+  digitalWrite(RED_LED, LOW);
 
   const char* id = "skeinSensor";
   const char* sub = "skein/control/#";
@@ -184,7 +192,7 @@ void connectMQTT() {
       Serial << F("Publishing oor: ") << message << endl;
       mqtt.publish("skein/range/oor", message.c_str(), true); // retained
       
-      digitalWrite(LED_BUILTIN, LOW);
+      digitalWrite(RED_LED, HIGH);
 
     } else {
       Serial << F("Failed. state=") << mqtt.state() << endl;

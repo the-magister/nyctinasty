@@ -19,8 +19,10 @@ int outOfRange; // coresponds to a reading that's out-of-range
 WiFiClient espClient;
 PubSubClient mqtt;
 
-// pinouts on the NodeMCU:
+// labels for the pins on the NodeMCU are weird:
 // "C:\Users\MikeD\AppData\Local\Arduino15\packages\esp8266\hardware\esp8266\2.3.0\variants\nodemcu\pins_arduino.h"
+#define BLUE_LED 2 // labeled "D4" on NodeMCU boards; HIGH=off
+#define RED_LED 16 // labeled "D0" on NodeMCU boards; HIGH=off
 
 void setup(void)  {
   Serial.begin(115200);
@@ -59,7 +61,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   // toggle the LED when we get a new message
   static boolean ledState = false;
   ledState = !ledState;
-  digitalWrite(LED_BUILTIN, ledState);
+  digitalWrite(RED_LED, ledState);
 
   // String class is much easier to work with
   String t = topic;
@@ -76,6 +78,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
     t.remove(0, msgRange.length());
     byte i = t.toInt();
     byte m = String((char*)payload).toInt();
+    
     range[i] = m;
     Serial << F(" = ") << i << ": " << range[i];
   } else {
@@ -86,7 +89,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 }
 
 void connectWiFi() {
-  digitalWrite(LED_BUILTIN, HIGH);
+  digitalWrite(RED_LED, LOW);
 
   // Update these.
 //  const char* ssid = "Looney_Ext";
@@ -94,7 +97,7 @@ void connectWiFi() {
   const char* ssid = "AsOne";
   const char* password = "fuckthapolice";
 
-  static Metro connectInterval(500UL);
+  static Metro connectInterval(5000UL);
   if ( connectInterval.check() ) {
 
     Serial << F("Attempting WiFi connection to ") << ssid << endl;
@@ -107,7 +110,7 @@ void connectWiFi() {
 
 
 void connectMQTT() {
-  digitalWrite(LED_BUILTIN, HIGH);
+  digitalWrite(RED_LED, LOW);
 
   const char* id = "skeinLights";
   const char* sub = "skein/range/#";
@@ -123,7 +126,7 @@ void connectMQTT() {
       Serial << F("Subscribing: ") << sub << endl;
       mqtt.subscribe(sub);
 
-      digitalWrite(LED_BUILTIN, LOW);
+      digitalWrite(RED_LED, HIGH);
 
     } else {
       Serial << F("Failed. state=") << mqtt.state() << endl;
