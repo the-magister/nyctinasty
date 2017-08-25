@@ -1,0 +1,16 @@
+
+Add to /etc/opkg.conf:
+
+src/gz chaos_calmer_base http://downloads.openwrt.org/snapshots/ … kages/base
+src/gz chaos_calmer_luci http://downloads.openwrt.org/snapshots/ … kages/luci
+src/gz chaos_calmer_management http://downloads.openwrt.org/snapshots/ … management
+src/gz chaos_calmer_packages http://downloads.openwrt.org/snapshots/ … s/packages
+src/gz chaos_calmer_routing http://downloads.openwrt.org/snapshots/ … es/routing
+src/gz chaos_calmer_telephony http://downloads.openwrt.org/snapshots/ … /telephony
+
+Then:
+
+opkg update
+opkg install luci
+opkg install mosquitto-client-nossl
+opkg install mosquitto-nossl
