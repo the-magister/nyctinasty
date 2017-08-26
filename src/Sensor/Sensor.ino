@@ -1,27 +1,33 @@
 /*
- * This module is responsible for polling the LIDAR sensors and publishing that data
- * 
- * Publishes: skein/range/[0-7]: distance information, mm
- *            skein/range/oor: distance corresponding to out-of-range, mm
- */
- 
+   This module is responsible for polling the LIDAR sensors and publishing that data
+
+   Publishes: skein/range/[0-7]: distance information, mm
+              skein/range/oor: distance corresponding to out-of-range, mm
+*/
+
 // You'll need to add http://arduino.esp8266.com/stable/package_esp8266com_index.json to the Additional Board Managers URL entry in Preferences.
-// Compile for NodeMCU 1.0 (ESP-12E Module), 80 Mhz, 921600 Upload Speed, 4M (3M SPIFFS). 
+// Compile for NodeMCU 1.0 (ESP-12E Module), 80 Mhz, 921600 Upload Speed, 4M (3M SPIFFS).
 #include <Streaming.h>
 #include <Metro.h>
 #include <Wire.h>
-#include <Adafruit_VL53L0X.h>
+#include <VL53L0X.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
+extern "C" {
+    #include "user_interface.h"
+}
 
-#define NLOX 8
-Adafruit_VL53L0X lox[NLOX] = {
-  Adafruit_VL53L0X(), Adafruit_VL53L0X(), Adafruit_VL53L0X(), Adafruit_VL53L0X(),
-  Adafruit_VL53L0X(), Adafruit_VL53L0X(), Adafruit_VL53L0X(), Adafruit_VL53L0X() 
+#define Nsensor 8
+VL53L0X sensor[Nsensor] = { 
+  VL53L0X(), VL53L0X(), VL53L0X(), VL53L0X(), 
+  VL53L0X(), VL53L0X(), VL53L0X(), VL53L0X()
 };
-VL53L0X_RangingMeasurementData_t range[NLOX];
-const int outOfRange = -1; // coresponds to a reading that's out-of-range
+int range[Nsensor];
+const int outOfRange = 2000; // coresponds to a reading that's out-of-range
 const byte topicOffset = 0; // should we ever need to extend this to more uCs, this will generate an offset.
+const boolean LONG_RANGE = true;
+const boolean HIGH_SPEED = false;
+const boolean HIGH_ACCURACY = true;
 
 WiFiClient espClient;
 PubSubClient mqtt;
@@ -31,40 +37,50 @@ PubSubClient mqtt;
 #define BLUE_LED 2 // labeled "D4" on NodeMCU boards; HIGH=off
 #define RED_LED 16 // labeled "D0" on NodeMCU boards; HIGH=off
 
-// handy helper 
-void selectLOX(uint8_t i) {
-  const byte addr = 0x70;
-  if (i > 7) return;
- 
-  Wire.beginTransmission(addr);
-  Wire.write(1 << i);
-  Wire.endTransmission();  
-}
-
 void setup(void)  {
   Serial.begin(115200);
   Serial << "Startup." << endl;
 
   // initialize the sensors
-  Wire.begin(SDA, SCL); // SDA=GPIO4=D2; SCL=GPIO5=D1
-  for( byte i=0;i<NLOX;i++) {
-    selectLOX(i);
-    if( ! lox[i].begin() ) {
-      Serial << "FAILED to initialize LOX " << i << endl;
-    } else {
-      Serial << "Initialized LOX " << i << endl;
+  Wire.begin(); // SDA=GPIO4=D2; SCL=GPIO5=D1
+  for ( byte i = 0; i < Nsensor; i++) {
+    selectSensor(i);
+    
+    sensor[i].init();
+    sensor[i].setTimeout(100);
+    
+    if ( LONG_RANGE ) {
+      // lower the return signal rate limit (default is 0.25 MCPS)
+      sensor[i].setSignalRateLimit(0.1);
+      // increase laser pulse periods (defaults are 14 and 10 PCLKs)
+      sensor[i].setVcselPulsePeriod(VL53L0X::VcselPeriodPreRange, 18);
+      sensor[i].setVcselPulsePeriod(VL53L0X::VcselPeriodFinalRange, 14);
     }
+    if ( HIGH_SPEED ) {
+      // reduce timing budget to 20 ms (default is about 33 ms)
+      sensor[i].setMeasurementTimingBudget(20000);
+
+    } else if ( HIGH_ACCURACY ) {
+      // increase timing budget to 100 ms
+      sensor[i].setMeasurementTimingBudget(100UL * 1000UL);
+
+    }
+    // Start continuous back-to-back mode (take readings as
+    // fast as possible).  To use continuous timed mode
+    // instead, provide a desired inter-measurement period in
+    // ms (e.g. sensor.startContinuous(100)).
+    sensor[i].startContinuous(50);
+
   }
 
   pinMode(BLUE_LED, OUTPUT);  // Shows sensor activity; flashing with polling
   pinMode(RED_LED, OUTPUT);   // Shows WiFi activity; solid on when there's an issue; flashing with MQTT messages
 
-  // don't allow the WiFi module to sleep.  
+  // don't allow the WiFi module to sleep.
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
 
   mqtt.setClient(espClient);
-//  const char* mqtt_server = "broker.mqtt-dashboard.com";
-  const char* mqtt_server = "asone-console";
+  const char* mqtt_server = "broker";
   mqtt.setServer(mqtt_server, 1883);
   mqtt.setCallback(callback);
 
@@ -84,44 +100,34 @@ void loop(void) {
 
   // track the time
   unsigned long tic = millis();
+  
   // poll the sensors
-  for( byte i=0;i<NLOX;i++) {
-    if( lox[i].Status == VL53L0X_ERROR_NONE ) {
-      Serial << "Ranging " << i << ": ";
+  digitalWrite(BLUE_LED, LOW);
+  for ( byte i = 0; i < Nsensor; i++) {
+    selectSensor(i);
+    range[i] = sensor[i].readRangeContinuousMillimeters();
   
-      digitalWrite(BLUE_LED, LOW);
-      selectLOX(i); // select the sensor
-      lox[i].rangingTest(&range[i], false); // ask it to range once
-      digitalWrite(BLUE_LED, HIGH);
-      
-      if( range[i].RangeStatus != 4 ) {
-        Serial << range[i].RangeMilliMeter << " mm." << endl;  
-      } else {
-        Serial << "out of range." << endl;
-      }
-      
-      // publish
-      publishRange(i);
-    }
+    // publish
+    publishRange(i);
   }
-  unsigned long toc = millis();
-  Serial << "Ranging Duration (ms): " << toc-tic << "\t fps (Hz):" << 1000/(toc-tic) << endl;
+  digitalWrite(BLUE_LED, HIGH);
   
+  unsigned long toc = millis();
+  Serial << "Ranging Duration (ms): " << toc - tic << "\t fps (Hz):" << 1000 / (toc - tic) << endl;
 }
 
 void publishRange(byte index) {
-  if( !mqtt.connected() ) return;
-  
+  if ( !mqtt.connected() ) return;
+
   // toggle the LED when we send a message
   static boolean ledState = false;
   ledState = !ledState;
   digitalWrite(RED_LED, ledState);
 
-  String topic = "skein/range/" + (index+(NLOX*topicOffset));
+  String topic = "skein/range/" + (index + (Nsensor * topicOffset));
 
-  int r = outOfRange;
-  if( range[index].RangeStatus != 4 ) r = range[index].RangeMilliMeter;
-  String message = String(r,10);
+  int r = range[index] < outOfRange ? range[index] : outOfRange;
+  String message = String(r, 10);
 
   mqtt.publish(topic.c_str(), message.c_str());
 }
@@ -154,10 +160,8 @@ void connectWiFi() {
   digitalWrite(RED_LED, LOW);
 
   // Update these.
-//  const char* ssid = "Looney_Ext";
-//  const char* password = "TinyandTooney";
-  const char* ssid = "AsOne";
-  const char* password = "fuckthapolice";
+  const char* ssid = "GamesWithFire";
+  const char* password = "safetythird";
 
   static Metro connectInterval(5000UL);
   if ( connectInterval.check() ) {
@@ -174,7 +178,7 @@ void connectWiFi() {
 void connectMQTT() {
   digitalWrite(RED_LED, LOW);
 
-  const char* id = "skeinSensor";
+  String id = "skeinSensor" + topicOffset;
   const char* sub = "skein/control/#";
 
   static Metro connectInterval(500UL);
@@ -182,16 +186,16 @@ void connectMQTT() {
 
     Serial << F("Attempting MQTT connection...") << endl;
     // Attempt to connect
-    if (mqtt.connect(id)) {
+    if (mqtt.connect(id.c_str())) {
       Serial << F("Connected.") << endl;
       // subscribe
       Serial << F("Subscribing: ") << sub << endl;
       mqtt.subscribe(sub);
 
-      String message = String(outOfRange,10);
+      String message = String(outOfRange, 10);
       Serial << F("Publishing oor: ") << message << endl;
       mqtt.publish("skein/range/oor", message.c_str(), true); // retained
-      
+
       digitalWrite(RED_LED, HIGH);
 
     } else {
@@ -200,5 +204,15 @@ void connectMQTT() {
 
     connectInterval.reset();
   }
+}
+
+// handy helper
+void selectSensor(uint8_t i) {
+  const byte addr = 0x70;
+  if (i > 7) return;
+
+  Wire.beginTransmission(addr);
+  Wire.write(1 << i);
+  Wire.endTransmission();
 }
 
