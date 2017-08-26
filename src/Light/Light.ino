@@ -2,6 +2,7 @@
  * This module is responsible for running lighting based on the Lidar sensor
  * 
  * Subscribes: skein/range/i/#
+ *             skein/range/oor
  */
  
 // You'll need to add http://arduino.esp8266.com/stable/package_esp8266com_index.json to the Additional Board Managers URL entry in Preferences.
@@ -125,7 +126,8 @@ void connectMQTT() {
   digitalWrite(RED_LED, LOW);
 
   String id = "skeinLight" + subsetIndex;
-  String sub = "skein/range/" + String(subsetIndex,10) + "/#";
+  String subm = "skein/range/" + String(subsetIndex,10) + "/#";
+  String subo = "skein/range/oor";
 
   static Metro connectInterval(500UL);
   if ( connectInterval.check() ) {
@@ -135,8 +137,10 @@ void connectMQTT() {
     if (mqtt.connect(id.c_str())) {
       Serial << F("Connected.") << endl;
       // subscribe
-      Serial << F("Subscribing: ") << sub << endl;
-      mqtt.subscribe(sub.c_str());
+      Serial << F("Subscribing: ") << subm << endl;
+      mqtt.subscribe(subm.c_str());
+      Serial << F("Subscribing: ") << subo << endl;
+      mqtt.subscribe(subo.c_str());
 
       digitalWrite(RED_LED, HIGH);
 
