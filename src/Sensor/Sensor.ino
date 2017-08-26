@@ -1,7 +1,8 @@
 /*
-   This module is responsible for polling the LIDAR sensors and publishing that data
+   This module is responsible for polling the LIDAR sensors and publishing that data.
+   We can have multiple sensors, and this is the i-th sensor.
 
-   Publishes: skein/range/[0-7]: distance information, mm
+   Publishes: skein/range/i/[0-7]: distance information, mm
               skein/range/oor: distance corresponding to out-of-range, mm
 */
 
@@ -13,18 +14,18 @@
 #include <VL53L0X.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
-extern "C" {
-#include "user_interface.h"
-}
 
-#define Nsensor 8
-VL53L0X sensor[Nsensor] = {
+// really need to save this to EEPROM
+// should we ever need to extend this to more uCs, this will generate an offset.
+byte subsetIndex = 0; 
+
+const byte Nsensor = 8;
+VL53L0X sensor[] = {
   VL53L0X(), VL53L0X(), VL53L0X(), VL53L0X(),
   VL53L0X(), VL53L0X(), VL53L0X(), VL53L0X()
 };
-int range[Nsensor];
-const int outOfRange = 2000; // coresponds to a reading that's out-of-range
-const byte topicOffset = 0; // should we ever need to extend this to more uCs, this will generate an offset.
+word range[Nsensor];
+const word outOfRange = (1<<11)-1; // coresponds to a reading that's out-of-range, 2047 mm.
 const boolean LONG_RANGE = true;
 const boolean HIGH_SPEED = false;
 const boolean HIGH_ACCURACY = true;
@@ -130,10 +131,8 @@ void publishRange(byte index) {
   ledState = !ledState;
   digitalWrite(RED_LED, ledState);
 
-  String topic = "skein/range/" + (index + (Nsensor * topicOffset));
-
-  int r = range[index] < outOfRange ? range[index] : outOfRange;
-  String message = String(r, 10);
+  String topic = "skein/range/" + String(subsetIndex,10) + "/" + String(index,10);
+  String message = String(range[index], 10);
 
   mqtt.publish(topic.c_str(), message.c_str());
 }
@@ -181,12 +180,11 @@ void connectWiFi() {
   }
 }
 
-
 void connectMQTT() {
   // turn on the RED LED when we're not connected
   digitalWrite(RED_LED, LOW);
 
-  String id = "skeinSensor" + topicOffset;
+  String id = "skeinSensor" + subsetIndex;
   const char* sub = "skein/control/#";
 
   static Metro connectInterval(500UL);

@@ -1,7 +1,7 @@
 /*
  * This module is responsible for running lighting based on the Lidar sensor
  * 
- * Subscribes: skein/range/#
+ * Subscribes: skein/range/i/#
  */
  
 // You'll need to add http://arduino.esp8266.com/stable/package_esp8266com_index.json to the Additional Board Managers URL entry in Preferences.
@@ -12,9 +12,18 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 
-#define NLOX 8
-int range[NLOX];
-int outOfRange; // coresponds to a reading that's out-of-range
+// really need to save this to EEPROM
+// should we ever need to extend this to more uCs, this will generate an offset.
+const byte subsetIndex = 0; 
+
+const byte Nsensor = 8;
+word range[Nsensor];
+word outOfRange = (1<<11)-1; // coresponds to a reading that's out-of-range
+
+// lighting
+byte value[Nsensor];
+// linearize perception to value
+float R = (outOfRange)/log2(255+1);
 
 WiFiClient espClient;
 PubSubClient mqtt;
@@ -34,8 +43,7 @@ void setup(void)  {
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
 
   mqtt.setClient(espClient);
-//  const char* mqtt_server = "broker.mqtt-dashboard.com";
-  const char* mqtt_server = "asone-console";
+  const char* mqtt_server = "broker";
   mqtt.setServer(mqtt_server, 1883);
   mqtt.setCallback(callback);
 
@@ -69,17 +77,22 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
   // list of topics that we'll process
   const String msgOOR = "skein/range/oor";
-  const String msgRange = "skein/range/";
+  static String msgRange = "skein/range/" + String(subsetIndex,10) + "/";
 
   if ( t.equals(msgOOR) ) {
     outOfRange = String((char*)payload).toInt();
+    R = (outOfRange)/log2(255+1);
+
     Serial << F(" = ") << outOfRange;
   } else if ( t.startsWith(msgRange) ) {
     t.remove(0, msgRange.length());
     byte i = t.toInt();
-    byte m = String((char*)payload).toInt();
+    word m = String((char*)payload).toInt();
     
     range[i] = m;
+    // see: https://diarmuid.ie/blog/pwm-exponential-led-fading-on-arduino-or-other-platforms/
+    value[i] = round( pow((float)range[i]/R, 2.0)-1.0 );
+
     Serial << F(" = ") << i << ": " << range[i];
   } else {
     Serial << F(" WARNING. unknown topic. continuing.");
@@ -88,14 +101,14 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial << endl;
 }
 
+
 void connectWiFi() {
+  // turn on the RED LED when we're not connected
   digitalWrite(RED_LED, LOW);
 
   // Update these.
-//  const char* ssid = "Looney_Ext";
-//  const char* password = "TinyandTooney";
-  const char* ssid = "AsOne";
-  const char* password = "fuckthapolice";
+  const char* ssid = "GamesWithFire";
+  const char* password = "safetythird";
 
   static Metro connectInterval(5000UL);
   if ( connectInterval.check() ) {
@@ -108,23 +121,22 @@ void connectWiFi() {
   }
 }
 
-
 void connectMQTT() {
   digitalWrite(RED_LED, LOW);
 
-  const char* id = "skeinLights";
-  const char* sub = "skein/range/#";
+  String id = "skeinLight" + subsetIndex;
+  String sub = "skein/range/" + String(subsetIndex,10) + "/#";
 
   static Metro connectInterval(500UL);
   if ( connectInterval.check() ) {
 
     Serial << F("Attempting MQTT connection...") << endl;
     // Attempt to connect
-    if (mqtt.connect(id)) {
+    if (mqtt.connect(id.c_str())) {
       Serial << F("Connected.") << endl;
       // subscribe
       Serial << F("Subscribing: ") << sub << endl;
-      mqtt.subscribe(sub);
+      mqtt.subscribe(sub.c_str());
 
       digitalWrite(RED_LED, HIGH);
 
