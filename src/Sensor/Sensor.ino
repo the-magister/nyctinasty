@@ -14,12 +14,12 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 extern "C" {
-    #include "user_interface.h"
+#include "user_interface.h"
 }
 
 #define Nsensor 8
-VL53L0X sensor[Nsensor] = { 
-  VL53L0X(), VL53L0X(), VL53L0X(), VL53L0X(), 
+VL53L0X sensor[Nsensor] = {
+  VL53L0X(), VL53L0X(), VL53L0X(), VL53L0X(),
   VL53L0X(), VL53L0X(), VL53L0X(), VL53L0X()
 };
 int range[Nsensor];
@@ -45,10 +45,10 @@ void setup(void)  {
   Wire.begin(); // SDA=GPIO4=D2; SCL=GPIO5=D1
   for ( byte i = 0; i < Nsensor; i++) {
     selectSensor(i);
-    
+
     sensor[i].init();
     sensor[i].setTimeout(100);
-    
+
     if ( LONG_RANGE ) {
       // lower the return signal rate limit (default is 0.25 MCPS)
       sensor[i].setSignalRateLimit(0.1);
@@ -100,18 +100,24 @@ void loop(void) {
 
   // track the time
   unsigned long tic = millis();
-  
+
   // poll the sensors
-  digitalWrite(BLUE_LED, LOW);
   for ( byte i = 0; i < Nsensor; i++) {
+    // toggle the BLUE LED when we poll the sensors
+    static boolean ledState = false;
+    ledState = !ledState;
+    digitalWrite(BLUE_LED, ledState);
+
     selectSensor(i);
     range[i] = sensor[i].readRangeContinuousMillimeters();
-  
+
     // publish
     publishRange(i);
+
+    Serial << range[i] << ",";
   }
-  digitalWrite(BLUE_LED, HIGH);
-  
+  Serial << endl;
+
   unsigned long toc = millis();
   Serial << "Ranging Duration (ms): " << toc - tic << "\t fps (Hz):" << 1000 / (toc - tic) << endl;
 }
@@ -119,7 +125,7 @@ void loop(void) {
 void publishRange(byte index) {
   if ( !mqtt.connected() ) return;
 
-  // toggle the LED when we send a message
+  // toggle the RED LED when we send a message
   static boolean ledState = false;
   ledState = !ledState;
   digitalWrite(RED_LED, ledState);
@@ -134,7 +140,7 @@ void publishRange(byte index) {
 
 // the real meat of the work is done here, where we process messages.
 void callback(char* topic, byte* payload, unsigned int length) {
-  // toggle the LED when we get a new message
+  // toggle the RED LED when we get a new message
   static boolean ledState = false;
   ledState = !ledState;
   digitalWrite(RED_LED, ledState);
@@ -157,6 +163,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 }
 
 void connectWiFi() {
+  // turn on the RED LED when we're not connected
   digitalWrite(RED_LED, LOW);
 
   // Update these.
@@ -176,6 +183,7 @@ void connectWiFi() {
 
 
 void connectMQTT() {
+  // turn on the RED LED when we're not connected
   digitalWrite(RED_LED, LOW);
 
   String id = "skeinSensor" + topicOffset;
@@ -196,6 +204,7 @@ void connectMQTT() {
       Serial << F("Publishing oor: ") << message << endl;
       mqtt.publish("skein/range/oor", message.c_str(), true); // retained
 
+      // turn off the RED LED when we're connected
       digitalWrite(RED_LED, HIGH);
 
     } else {
