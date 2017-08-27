@@ -14,6 +14,7 @@ void commsUpdate();
 void commsSubscribe(String topic);
 extern void commsProcess(String topic, String message);
 
+boolean commsConnected(); 
 void commsPublish(String topic, String message, boolean showPub=false);
 
 // don't need to mess with these

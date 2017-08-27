@@ -22,6 +22,13 @@ void commsBegin(String id) {
   myID = id;
   mqtt.setClient(espClient);
   mqtt.setCallback(commsCallback);
+
+  pinMode(BLUE_LED, OUTPUT);
+  pinMode(RED_LED, OUTPUT);
+}
+
+boolean commsConnected() {
+	mqtt.connected();
 }
 
 // the real meat of the work is done here, where we process messages.
