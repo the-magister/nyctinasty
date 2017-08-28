@@ -26,13 +26,30 @@ void setup() {
   size(640, 640,FX2D);
   background(0,0,0);
 
+  
 /*
   client = new MQTTClient(this);
   client.connect("mqtt://try:try@broker.shiftr.io", "processing");
   client.subscribe("/example");
   // client.unsubscribe("/example");
   */
-
+/* MGD:
+	see: libraries/Skein_Comms/Skein_Comms.cpp:connectMQTT
+	
+	probably the code is something like this:
+	
+	String broker="broker";  // 192.168.3.1, but this should resolve with local DNS
+	word port=1883;
+	String id="skeinSensorViz";
+	String subTopic="skein/range/0/#"; // # is wildcard
+	
+	client.connect("broker", id); // default port assumption (=1883) is valid.
+	client.subscribe(subTopic);
+	
+	On the Arduino side, you have to register a callback function, which is your messageReceived(), below
+	
+*/
+	
   
   int[][] colors = new int[][] {{255,0,0},{0,255,0},{50,50,255},{255,255,255},
       {255,0,0},{0,255,0},{50,50,255},{255,255,255},
@@ -153,6 +170,27 @@ void updateTarget() {
 void messageReceived(String topic, byte[] payload) {
   println("new message: " + topic + " - " + new String(payload));
 }
+
+/* MGD:
+	probably want something like:
+	
+	
+void messageReceived(String topic, byte[] payload) {
+	String message = String(payload); // assuming the payload is NULL-terminated, I guess
+	word rangeM = message.toInt());
+	
+    // take the last character of the topic as the range index
+    topic.remove(0, topic.length() - 1);
+    byte i = topic.toInt();
+    word m = rangeM.toInt();
+
+	// assign range from payload
+	range[i] = m;
+	
+	println("new message: " + topic + " - " + new String(payload));
+}
+
+*/
 
 void keyPressed() {
   paused = !paused;
