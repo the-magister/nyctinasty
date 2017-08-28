@@ -1,138 +1,113 @@
 /*
- * This module is responsible for running lighting based on the Lidar sensor
- * 
- * Subscribes: skein/range/#
- */
- 
+   This module is responsible for running lighting based on the Lidar sensor
+
+   Subscribes: skein/range/i/#
+               skein/range/oor
+*/
+
 // You'll need to add http://arduino.esp8266.com/stable/package_esp8266com_index.json to the Additional Board Managers URL entry in Preferences.
-// Compile for NodeMCU 1.0 (ESP-12E Module), 80 Mhz, 921600 Upload Speed, 4M (3M SPIFFS). 
+// Compile for NodeMCU 1.0 (ESP-12E Module), 80 Mhz, 921600 Upload Speed, 4M (3M SPIFFS).
 #include <Streaming.h>
 #include <Metro.h>
+#define FASTLED_ESP8266_RAW_PIN_ORDER
 #include <FastLED.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
+#include "Skein_Comms.h"
 
-#define NLOX 8
-int range[NLOX];
-int outOfRange; // coresponds to a reading that's out-of-range
+// really need to save this to EEPROM
+// should we ever need to extend this to more uCs, this will generate an offset.
+const byte subsetIndex = 0;
 
-WiFiClient espClient;
-PubSubClient mqtt;
+const byte Nsensor = 8;
+word range[Nsensor];
+word outOfRange = (1 << 11) - 1; // coresponds to a reading that's out-of-range
 
-// labels for the pins on the NodeMCU are weird:
-// "C:\Users\MikeD\AppData\Local\Arduino15\packages\esp8266\hardware\esp8266\2.3.0\variants\nodemcu\pins_arduino.h"
-#define BLUE_LED 2 // labeled "D4" on NodeMCU boards; HIGH=off
-#define RED_LED 16 // labeled "D0" on NodeMCU boards; HIGH=off
+// lighting
+// How many leds are in the strip?
+const byte NUM_LEDS = 1 + Nsensor;
+// Data pin that led data will be written out over
+#define DATA_PIN 12 // GPIO12/D6.
+CRGBArray<NUM_LEDS> leds;
+const unsigned long targetFPS = 20;
+
+byte value[Nsensor];
+unsigned long avgValue[Nsensor];
+// linearize perception to value
+float R = (float)(outOfRange) / log2(255.0 + 1.0);
+
+// connect to the MQTT network with this id
+String id = "skeinLight" + subsetIndex;
+
+// subscribe and process these topics
+String ranges = "skein/range/" + String(subsetIndex, 10) + "/#";
+String oor = "skein/range/oor";
 
 void setup(void)  {
   Serial.begin(115200);
-  Serial << "Startup." << endl;
+  delay(20);
+  Serial << endl << endl << "Startup." << endl;
 
-  pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED pin as an output
+  FastLED.addLeds<WS2811, DATA_PIN, RGB>(leds, NUM_LEDS);
 
-  // don't allow the WiFi module to sleep.  
-  WiFi.setSleepMode(WIFI_NONE_SLEEP);
-
-  mqtt.setClient(espClient);
-//  const char* mqtt_server = "broker.mqtt-dashboard.com";
-  const char* mqtt_server = "asone-console";
-  mqtt.setServer(mqtt_server, 1883);
-  mqtt.setCallback(callback);
-
+  commsBegin(id);
+  commsSubscribe(ranges);
+  commsSubscribe(oor);
 }
 
 void loop(void) {
   // comms handling
-  if (WiFi.status() != WL_CONNECTED) {
-    connectWiFi();
-  } else if (!mqtt.connected()) {
-    connectMQTT();
-  } else {
-    mqtt.loop(); // look for a message
-  }
+  commsUpdate();
 
   // lights handling
+  if ( commsConnected() ) {
+    for ( byte i = 0; i < Nsensor; i++ ) {
+      Serial << avgValue[i] << ",";
+    }
+    Serial << 255 << endl;
+    // do stuff with FastLED to map range[] to lights
+  }
 
-  // do stuff with FastLED to map range[] to lights
+  // DON'T hammer the LEDs.  the clockless protocol interferes with
+  // WiFi interrupt handling.
+  static Metro ledUpdate(1000UL / targetFPS);
+  if ( ledUpdate.check() ) {
+    FastLED.show();
+    ledUpdate.reset();
+  }
 }
 
-// the real meat of the work is done here, where we process messages.
-void callback(char* topic, byte* payload, unsigned int length) {
-  // toggle the LED when we get a new message
-  static boolean ledState = false;
-  ledState = !ledState;
-  digitalWrite(RED_LED, ledState);
+void commsProcess(String topic, String message) {
 
-  // String class is much easier to work with
-  String t = topic;
-  Serial << F("<- ") << t;
+  //  Serial << "<- " << topic << " " << message << "\t=> ";
 
-  // list of topics that we'll process
-  const String msgOOR = "skein/range/oor";
-  const String msgRange = "skein/range/";
+  if ( topic.equals(oor) ) {
 
-  if ( t.equals(msgOOR) ) {
-    outOfRange = String((char*)payload).toInt();
-    Serial << F(" = ") << outOfRange;
-  } else if ( t.startsWith(msgRange) ) {
-    t.remove(0, msgRange.length());
-    byte i = t.toInt();
-    byte m = String((char*)payload).toInt();
-    
-    range[i] = m;
-    Serial << F(" = ") << i << ": " << range[i];
+    outOfRange = message.toInt();
+    R = (float)(outOfRange) / log2(255.0 + 1.0);
+    Serial << "oor=" << outOfRange << "\tR=" << R;
+  } else if ( topic.startsWith("skein/range") ) {
+    // take the last character of the topic as the range index
+    topic.remove(0, topic.length() - 1);
+    byte i = topic.toInt();
+    word m = message.toInt();
+
+    // cap range
+    range[i] = m < outOfRange ? m : outOfRange;
+    // see: https://diarmuid.ie/blog/pwm-exponential-led-fading-on-arduino-or-other-platforms/
+    value[i] = round( pow(2.0, (float)(outOfRange - range[i]) / R) - 1.0 );
+    // average
+    const byte smoothing = 3;
+    avgValue[i] = (avgValue[i] * (smoothing - 1) + value[i]) / smoothing;
+    // set LED brightness by value
+    leds[1+i] = CHSV(HUE_BLUE, 0, avgValue[i]);
+
+    //    if( i==0 ) Serial << "range[" << i << "]=" << range[i] << "\tvalue[" << i << "]=" << value[i];
   } else {
-    Serial << F(" WARNING. unknown topic. continuing.");
+    Serial << F("WARNING. unknown topic. continuing.");
   }
 
   Serial << endl;
 }
 
-void connectWiFi() {
-  digitalWrite(RED_LED, LOW);
-
-  // Update these.
-//  const char* ssid = "Looney_Ext";
-//  const char* password = "TinyandTooney";
-  const char* ssid = "AsOne";
-  const char* password = "fuckthapolice";
-
-  static Metro connectInterval(5000UL);
-  if ( connectInterval.check() ) {
-
-    Serial << F("Attempting WiFi connection to ") << ssid << endl;
-    // Attempt to connect
-    WiFi.begin(ssid, password);
-
-    connectInterval.reset();
-  }
-}
-
-
-void connectMQTT() {
-  digitalWrite(RED_LED, LOW);
-
-  const char* id = "skeinLights";
-  const char* sub = "skein/range/#";
-
-  static Metro connectInterval(500UL);
-  if ( connectInterval.check() ) {
-
-    Serial << F("Attempting MQTT connection...") << endl;
-    // Attempt to connect
-    if (mqtt.connect(id)) {
-      Serial << F("Connected.") << endl;
-      // subscribe
-      Serial << F("Subscribing: ") << sub << endl;
-      mqtt.subscribe(sub);
-
-      digitalWrite(RED_LED, HIGH);
-
-    } else {
-      Serial << F("Failed. state=") << mqtt.state() << endl;
-    }
-
-    connectInterval.reset();
-  }
-}
 
