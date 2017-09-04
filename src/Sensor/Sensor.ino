@@ -166,7 +166,7 @@ void loop(void) {
 
   Serial << range[index] << ",";
 
-  // send oor informaton once every 30 seconds
+  // send oor information once every 30 seconds
   static Metro oorPubInterval(30UL * 1000UL);
   if ( commsConnected() && oorPubInterval.check() ) {
     commsPublish("skein/range/oor", String(outOfRange, 10));
