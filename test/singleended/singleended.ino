@@ -67,32 +67,40 @@ void setup(void) {
 }
 
 void loop(void) {
+  // comms handling
+  commsUpdate();
+
+  // bail out if no connection
+  if ( ! commsConnected() ) return;
+
+  // sensor handling
+
   word adc[8]; // 12 bit readings
 
 //  adc[0] = distance(ads[0].readADC_SingleEnded(0));
-  adc[0] = ads[0].readADC_SingleEnded(0);
-  adc[1] = ads[0].readADC_SingleEnded(1);
-  adc[2] = ads[0].readADC_SingleEnded(2);
-  adc[3] = ads[0].readADC_SingleEnded(3);
+  adc[0] = ads[0].readADC_SingleEnded(0); yield();
+  adc[1] = ads[0].readADC_SingleEnded(1); yield();
+  adc[2] = ads[0].readADC_SingleEnded(2); yield();
+  adc[3] = ads[0].readADC_SingleEnded(3); yield();
   Serial << adc[0] << "," << adc[1] << "," << adc[2] << "," << adc[3];
 
   adc[4] = adc[5] = adc[6] = adc[7] = 0;
 /*
-  adc[4] = ads[1].readADC_SingleEnded(0);
-  adc[5] = ads[1].readADC_SingleEnded(1);
-  adc[6] = ads[1].readADC_SingleEnded(2);
-  adc[7] = ads[1].readADC_SingleEnded(3);
+  adc[4] = ads[1].readADC_SingleEnded(0); yield();
+  adc[5] = ads[1].readADC_SingleEnded(1); yield();
+  adc[6] = ads[1].readADC_SingleEnded(2); yield();
+  adc[7] = ads[1].readADC_SingleEnded(3); yield();
   Serial << "," << adc[4] << "," << adc[5] << "," << adc[6] << "," << adc[7];
 */  
   Serial << endl;
 
   for(byte i=0; i<4; i++ ) {
     range[i] = distance(adc[i]);
-    publishRange(i);
+    publishRange(i); yield();
   }
   for(byte i=4; i<Nsensor; i++ ) {
     range[i] = outOfRange;
-    publishRange(i);
+    publishRange(i); yield();
   }
   delay(40); // read cyles are ~ 40ms, so no point in sampling more frequently.
 
