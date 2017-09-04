@@ -22,8 +22,8 @@ const byte Nsensor = 8;
 boolean useSensor[Nsensor];
 
 Adafruit_ADS1015 ads[2] = {
-  Adafruit_ADS1015(ADS1015_ADDRESS),    // 0x48 (1001000) ADR -> GND
-  Adafruit_ADS1015(ADS1015_ADDRESS+1)   // 0x49 (1001001) ADR -> VDD
+  Adafruit_ADS1015(ADS1X15_ADDRESS),    // 0x48 (1001000) ADR -> GND
+  Adafruit_ADS1015(ADS1X15_ADDRESS+1)   // 0x49 (1001001) ADR -> VDD
 };
 word range[Nsensor];
 const word outOfRange = (1 << 11) - 1; // coresponds to a reading that's out-of-range, 2047 mm.
@@ -75,21 +75,21 @@ void loop(void) {
 
   // sensor handling
 
-  word adc[8]; // 12 bit readings
+  float adc[8]; // 12 bit readings
 
-//  adc[0] = distance(ads[0].readADC_SingleEnded(0));
-  adc[0] = ads[0].readADC_SingleEnded(0); yield();
-  adc[1] = ads[0].readADC_SingleEnded(1); yield();
-  adc[2] = ads[0].readADC_SingleEnded(2); yield();
-  adc[3] = ads[0].readADC_SingleEnded(3); yield();
+//  adc[0] = distance(ads[0].readADC_SingleEnded_V(0));
+  adc[0] = ads[0].readADC_SingleEnded_V(0); yield();
+  adc[1] = ads[0].readADC_SingleEnded_V(1); yield();
+  adc[2] = ads[0].readADC_SingleEnded_V(2); yield();
+  adc[3] = ads[0].readADC_SingleEnded_V(3); yield();
   Serial << adc[0] << "," << adc[1] << "," << adc[2] << "," << adc[3];
 
   adc[4] = adc[5] = adc[6] = adc[7] = 0;
 /*
-  adc[4] = ads[1].readADC_SingleEnded(0); yield();
-  adc[5] = ads[1].readADC_SingleEnded(1); yield();
-  adc[6] = ads[1].readADC_SingleEnded(2); yield();
-  adc[7] = ads[1].readADC_SingleEnded(3); yield();
+  adc[4] = ads[1].readADC_SingleEnded_V(0); yield();
+  adc[5] = ads[1].readADC_SingleEnded_V(1); yield();
+  adc[6] = ads[1].readADC_SingleEnded_V(2); yield();
+  adc[7] = ads[1].readADC_SingleEnded_V(3); yield();
   Serial << "," << adc[4] << "," << adc[5] << "," << adc[6] << "," << adc[7];
 */  
   Serial << endl;
@@ -114,11 +114,7 @@ void loop(void) {
 }
 
 // take an ADC reading and return distance, in mm.
-float distance(word reading) {
-  // 1 bit = 2mV
-  const float mVPerBit = 2.0;
-  float voltage = (float)reading*mVPerBit / 1000.0;
-  
+float distance(float voltage) {
   if( voltage < 0.4 ) voltage = 0.4; // edge case, and protect from div0
   return( ( 73.2242*(1.0/voltage) - 9.0036)*10.0 ); // mm
 }
