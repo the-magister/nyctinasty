@@ -107,6 +107,7 @@ void loop()
   int read1 = sensor1.readRangeContinuousMillimeters();
   if (read1 > 2000) read1 = 2000;
   avgRead1 = (avgRead1*(smoothing-1)+read1)/smoothing;
+  avgRead1 = read1;
 
   if (sensor1.timeoutOccurred()) {
     Serial.print(" TIMEOUT");
@@ -117,6 +118,7 @@ void loop()
   int read2 = sensor2.readRangeContinuousMillimeters();
   if (read2 > 2000) read2 = 2000;
   avgRead2 = (avgRead2*(smoothing-1)+read2)/smoothing;
+  avgRead2 = read2;
 
   if (sensor2.timeoutOccurred()) {
     Serial.print(" TIMEOUT");

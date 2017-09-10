@@ -32,6 +32,8 @@ const boolean LONG_RANGE = true;
 const boolean HIGH_SPEED = false;
 const boolean HIGH_ACCURACY = true;
 
+const int measurePeriod = 50;
+
 // connect to the MQTT network with this id
 String id = "skeinSensor" + subsetIndex;
 
@@ -45,7 +47,7 @@ void setup(void)  {
 
   // reset the I2C expander
   Serial << "Startup.  resetting I2C expander." << endl;
-  const byte resetPin = 16;
+  const byte resetPin = 14;
   pinMode(resetPin, OUTPUT);
   digitalWrite(resetPin, LOW);
   delay(100);
@@ -55,24 +57,27 @@ void setup(void)  {
   // initialize the sensors
   Serial << "Startup. Wire start." << endl;
   Wire.begin(); // SDA=GPIO4=D2; SCL=GPIO5=D1
-  delay(100);
+  //delay(100);
   Serial << "Startup. Wire complete." << endl;
 
   for ( byte i = 0; i < Nsensor; i++) {
+//    if (i == 5 || i == 6) continue;
+    if (i == 5) continue;
+    
     Serial << "Startup. Initializing sensor " << i << endl;
     selectSensor(i);
     delay(100);
     Serial << "Startup. sensor selected " << i << endl;
-    delay(100);
+    //delay(100);
 
     useSensor[i] = sensor[i].init();
     Serial << "Startup. sensor initialized " << i << " with return=" << useSensor[i] << endl;
-    delay(100);
-    if ( !useSensor[i] ) break;
+    //delay(100);
+    if ( !useSensor[i] ) continue;
 
     sensor[i].setTimeout(500);
     Serial << "Startup. sensor timeout set " << i << endl;
-    delay(100);
+    //delay(100);
 
     if ( LONG_RANGE ) {
       // lower the return signal rate limit (default is 0.25 MCPS)
@@ -93,42 +98,53 @@ void setup(void)  {
     delay(100);
   }
 
+
   // Start continuous back - to - back mode (take readings as
   // fast as possible).  To use continuous timed mode
   // instead, provide a desired inter-measurement period in
   // ms (e.g. sensor.startContinuous(100)).
   if ( useSensor[0] ) {
     selectSensor(0);
-    sensor[0].startContinuous(50);
+    sensor[0].startContinuous(measurePeriod);
+    delay(100);
   }
   if ( useSensor[2] ) {
     selectSensor(2);
-    sensor[2].startContinuous(50);
+    sensor[2].startContinuous(measurePeriod);
+    delay(100);
   }
   if ( useSensor[4] ) {
     selectSensor(4);
-    sensor[4].startContinuous(50);
+    sensor[4].startContinuous(measurePeriod);
+    delay(100);
   }
   if ( useSensor[6] ) {
     selectSensor(6);
-    sensor[6].startContinuous(50);
+    sensor[6].startContinuous(measurePeriod);
+    delay(100);
   }
+  
   if ( useSensor[1] ) {
     selectSensor(1);
-    sensor[1].startContinuous(50);
+    sensor[1].startContinuous(measurePeriod);
+    delay(100);
   }
   if ( useSensor[3] ) {
     selectSensor(3);
-    sensor[3].startContinuous(50);
+    sensor[3].startContinuous(measurePeriod);
+    delay(100);
   }
   if ( useSensor[5] ) {
     selectSensor(5);
-    sensor[5].startContinuous(50);
+    sensor[5].startContinuous(measurePeriod);
+    delay(100);
   }
   if ( useSensor[7] ) {
     selectSensor(7);
-    sensor[7].startContinuous(50);
+    sensor[7].startContinuous(measurePeriod);
+    delay(100);
   }
+
 
   Serial << "Startup. continuous sensing started." << endl;
 
@@ -137,6 +153,15 @@ void setup(void)  {
   commsBegin(id);
   commsSubscribe(control);
 
+}
+
+int count = 0;
+void loopOld(void) {
+  count++;
+  if (count % 100) {
+    Serial << ".";
+  }
+  delay(100);
 }
 
 void loop(void) {
@@ -159,12 +184,17 @@ void loop(void) {
 
   selectSensor(index);
   range[index] = sensor[index].readRangeContinuousMillimeters();
-  //    range[index] = sensor[index].readRangeSingleMillimeters();
+  //range[index] = sensor[index].readRangeSingleMillimeters();
+
+  if (range[index] >= outOfRange) {
+    range[index] = outOfRange;
+  }
+
+  Serial << range[index] << ",";
+
 
   // publish
   publishRange(index);
-
-  Serial << range[index] << ",";
 
   // send oor information once every 30 seconds
   static Metro oorPubInterval(30UL * 1000UL);
@@ -172,7 +202,6 @@ void loop(void) {
     commsPublish("skein/range/oor", String(outOfRange, 10));
     oorPubInterval.reset();
   }
-
 }
 
 void publishRange(byte index) {
