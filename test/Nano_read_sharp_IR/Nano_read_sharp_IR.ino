@@ -1,20 +1,96 @@
 // compile for Nano
 #include <Streaming.h>
 #include <Metro.h>
+#include <SoftwareSerial.h>
+
+// poll the analog pins every interval
+const unsigned long updateInterval = 10UL; // ms
+
+// number of analog pins
+const byte Npins = 8;
+
+// store readings
+uint32_t reading[Npins];
+
+// target bit depth; cannot exceed 16
+byte analogBits = constrain(12, 10, 16);
+
+// send string
+String message;
+
+SoftwareSerial mySerial(10, 11); // RX, TX; cross to other pair.
 
 void setup() {
+  // for local output
   Serial.begin(115200);
+
+  // for remote output
+  mySerial.begin(57600);
+
   // put your setup code here, to run once:
   analogReference(EXTERNAL); // tune to 2.75V
+
+  // with 16 bit resolution, we could have "65535," 8 times with a NUL at the end.
+  message.reserve((5 + 1) * 8 + 1);
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  Serial << analogRead(0) << ",";
-  Serial << analogRead(1) << ",";
-  Serial << analogRead(2) << ",";
-//  Serial << analogRead(3) << ",";
+  // note start time of reading
+  unsigned long then = millis();
 
-  Serial << endl;
-  delay(20);
+  // read sensors
+  readSensors();
+
+  // send message
+  sendReadings();
+
+  // wait?
+  unsigned long now = millis();
+  Serial << F("Update time:") << now - then << endl;
+  if ( (now - then) < updateInterval ) {
+    delay(updateInterval - (now - then));
+  }
 }
+
+// from: https://forum.arduino.cc/index.php?topic=109672.0
+//    FILE: analogReadN.pde
+//  AUTHOR: Rob Tillaart
+//    DATE: 2012-05-10
+// PUPROSE: higher precision analogRead()
+// http://www.atmel.com/Images/doc8003.pdf
+void readSensors() {
+  // reset sensor values
+  for ( byte i = 0; i < Npins; i++ ) reading[i] = 0;
+
+  byte bits = constrain(analogBits, 10, 16) - 10;
+  int samples = 1 << (bits << 1);
+
+  // read the sensors
+  for ( byte j = 0; j < samples; j++ ) {
+    for ( byte i = 0; i < Npins; i++ ) {
+      reading[i] += analogRead(i);
+    }
+  }
+
+  // apply bitshift
+  for ( byte i = 0; i < Npins; i++ ) reading[i] >> bits;
+}
+
+void sendReadings() {
+  const String delim = ",";
+
+  message =         String(reading[0], DEC) +
+            delim + String(reading[1], DEC) +
+            delim + String(reading[2], DEC) +
+            delim + String(reading[3], DEC) +
+            delim + String(reading[4], DEC) +
+            delim + String(reading[5], DEC) +
+            delim + String(reading[6], DEC) +
+            delim + String(reading[7], DEC);
+
+  Serial << message << endl;
+
+  mySerial << message << endl;
+}
+
+
