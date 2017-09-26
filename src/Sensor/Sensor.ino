@@ -62,7 +62,7 @@ void setup(void)  {
 
   for ( byte i = 0; i < Nsensor; i++) {
 //    if (i == 5 || i == 6) continue;
-    if (i == 5) continue;
+    if (i == 5) continue;  // Don't initialize broken sensor for now.  A timeout approach would be better for dealing with broken sensors in the field
     
     Serial << "Startup. Initializing sensor " << i << endl;
     selectSensor(i);
@@ -153,15 +153,6 @@ void setup(void)  {
   commsBegin(id);
   commsSubscribe(control);
 
-}
-
-int count = 0;
-void loopOld(void) {
-  count++;
-  if (count % 100) {
-    Serial << ".";
-  }
-  delay(100);
 }
 
 void loop(void) {
