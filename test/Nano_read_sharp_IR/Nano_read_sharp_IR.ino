@@ -39,14 +39,31 @@ void loop() {
   unsigned long then = millis();
 
   // read sensors
-  readSensors();
+//  readSensors();
 
+  for( byte i=0; i<4; i++ ) {
+    byte smoothing = 5;
+    word r = analogRead(i);
+    r = r<250 ? 250 : r;
+    
+    reading[i] = (reading[i]*(smoothing-1) + r)/smoothing;
+    
+    Serial << reading[i] << ",";
+  }
+  Serial << "0,1023" << endl;
+  
+//  reading[0] = analogRead(0);
+// reading[1] = analogRead(1);
+//  reading[2] = analogRead(2);
+//  reading[3] = analogRead(3);
+
+  
   // send message
-  sendReadings();
+//  sendReadings();
 
   // wait?
   unsigned long now = millis();
-  Serial << F("Update time:") << now - then << endl;
+//  Serial << F("Update time:") << now - then << endl;
   if ( (now - then) < updateInterval ) {
     delay(updateInterval - (now - then));
   }
@@ -68,7 +85,9 @@ void readSensors() {
   // read the sensors
   for ( byte j = 0; j < samples; j++ ) {
     for ( byte i = 0; i < Npins; i++ ) {
-      reading[i] += analogRead(i);
+      word r = analogRead(i);
+      
+      reading[i] += r;
     }
   }
 
@@ -82,12 +101,14 @@ void sendReadings() {
   message =         String(reading[0], DEC) +
             delim + String(reading[1], DEC) +
             delim + String(reading[2], DEC) +
-            delim + String(reading[3], DEC) +
-            delim + String(reading[4], DEC) +
-            delim + String(reading[5], DEC) +
-            delim + String(reading[6], DEC) +
-            delim + String(reading[7], DEC);
-
+            delim + String(reading[3], DEC) //+
+//            delim + String(reading[4], DEC) +
+//            delim + String(reading[5], DEC) +
+//            delim + String(reading[6], DEC) +
+//            delim + String(reading[7], DEC);
+;
+  Serial << "0,16000,";
+  
   Serial << message << endl;
 
   mySerial << message << endl;
