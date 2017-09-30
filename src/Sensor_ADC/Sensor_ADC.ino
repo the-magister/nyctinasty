@@ -4,7 +4,7 @@
 #include <SoftwareSerial.h>
 
 // poll the analog pins every interval
-const unsigned long updateInterval = 10UL; // ms
+const unsigned long updateInterval = 20UL; // ms
 
 // number of analog pins
 const byte Npins = 8;
@@ -41,7 +41,7 @@ void loop() {
 
   // read sensors
 //  readSensors();
-
+/*
   for( byte i=0; i<4; i++ ) {
     byte smoothing = 5;
     word r = analogRead(i);
@@ -52,6 +52,7 @@ void loop() {
     
 //    Serial << reading[i] << ",";
   }
+  */
 //  Serial << "0,1023" << endl;
 
 //  reading[0] = analogRead(0);
@@ -59,16 +60,21 @@ void loop() {
 //  reading[2] = analogRead(2);
 //  reading[3] = analogRead(3);
 
+
+  Metro updateWhile(updateInterval);
+  updateWhile.reset();
+  word updates = 0;
+  for( byte i=0; i<Npins; i++ ) reading[i] = 0;
+  while( !updateWhile.check() ) {
+    // get a bunch of readings
+    for( byte i=0; i<Npins; i++ ) reading[i] += analogRead(i);
+    updates ++;
+  }
+  for( byte i=0; i<Npins; i++ ) reading[i] /= updates;
   
   // send message
   sendReadings();
 
-  // wait?
-  unsigned long now = millis();
-//  Serial << F("Update time:") << now - then << endl;
-  if ( (now - then) < updateInterval ) {
-    delay(updateInterval - (now - then));
-  }
 }
 
 // from: https://forum.arduino.cc/index.php?topic=109672.0
