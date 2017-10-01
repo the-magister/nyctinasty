@@ -5,6 +5,7 @@
 
 // poll the analog pins every interval
 const unsigned long updateInterval = 20UL; // ms
+Metro updateWhile(updateInterval);
 
 // number of analog pins
 const byte Npins = 8;
@@ -12,8 +13,19 @@ const byte Npins = 8;
 // store readings
 uint32_t reading[Npins];
 
-// target bit depth; cannot exceed 16
-byte analogBits = constrain(12, 10, 16);
+// set reading threshold; readings lower than this are oor
+const word threshold3000mm = 86;
+const word threshold2500mm = 102;
+const word threshold2000mm = 127;
+const word outOfRangeReading = threshold2000mm;
+
+// defines for setting and clearing register bits
+#ifndef cbi
+#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
+#endif
+#ifndef sbi
+#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
+#endif
 
 // send string
 String message;
@@ -30,96 +42,62 @@ void setup() {
   // put your setup code here, to run once:
   analogReference(EXTERNAL); // tune to 2.75V
 
-  // with 16 bit resolution, we could have "65535," 8 times with a NUL at the end.
-  message.reserve((5 + 1) * 8 + 1);
+  // Could have a message "3000," eight times and a terminator
+  message.reserve((4 + 1) * 8 + 1);
+
+  // ADC prescalar
+  // set prescale to 128
+  // see: http://forum.arduino.cc/index.php?topic=6549.0
+  sbi(ADCSRA,ADPS2) ;
+  sbi(ADCSRA,ADPS1) ;
+  sbi(ADCSRA,ADPS0) ;
 
 }
 
 void loop() {
-  // note start time of reading
-  unsigned long then = millis();
-
-  // read sensors
-//  readSensors();
-/*
-  for( byte i=0; i<4; i++ ) {
-    byte smoothing = 5;
-    word r = analogRead(i);
-    static word lloq = 10;
-    r = r<lloq ? lloq : r;
-    
-    reading[i] = (reading[i]*(smoothing-1) + r)/smoothing;
-    
-//    Serial << reading[i] << ",";
-  }
-  */
-//  Serial << "0,1023" << endl;
-
-//  reading[0] = analogRead(0);
-// reading[1] = analogRead(1);
-//  reading[2] = analogRead(2);
-//  reading[3] = analogRead(3);
-
-
-  Metro updateWhile(updateInterval);
-  updateWhile.reset();
-  word updates = 0;
-  for( byte i=0; i<Npins; i++ ) reading[i] = 0;
-  while( !updateWhile.check() ) {
-    // get a bunch of readings
-    for( byte i=0; i<Npins; i++ ) reading[i] += analogRead(i);
-    updates ++;
-  }
-  for( byte i=0; i<Npins; i++ ) reading[i] /= updates;
+  // poll sensors
+  readSensors();
   
   // send message
   sendReadings();
-
 }
 
-// from: https://forum.arduino.cc/index.php?topic=109672.0
-//    FILE: analogReadN.pde
-//  AUTHOR: Rob Tillaart
-//    DATE: 2012-05-10
-// PUPROSE: higher precision analogRead()
-// http://www.atmel.com/Images/doc8003.pdf
 void readSensors() {
-  // reset sensor values
-  for ( byte i = 0; i < Npins; i++ ) reading[i] = 0;
+  // reset timer
+  updateWhile.reset();
+  word updates = 0;
 
-  byte bits = constrain(analogBits, 10, 16) - 10;
-  int samples = 1 << (bits << 1);
+  // reset readings
+  for( byte i=0; i<Npins; i++ ) reading[i] = 0;
 
-  // read the sensors
-  for ( byte j = 0; j < samples; j++ ) {
-    for ( byte i = 0; i < Npins; i++ ) {
-      word r = analogRead(i);
-      
-      reading[i] += r;
+  // get a bunch of readings
+  while( !updateWhile.check() ) {
+    for( byte i=0; i<Npins; i++ ) {
+        word r = analogRead(i);
+        r = r<outOfRangeReading ? outOfRangeReading : r;
+        reading[i] += r;
     }
+    updates ++;
   }
-
-  // apply bitshift
-  for ( byte i = 0; i < Npins; i++ ) reading[i] >> bits;
-}
+  
+  // divide by reading count
+  for( byte i=0; i<Npins; i++ ) reading[i] /= updates;
+}  
 
 void sendReadings() {
-  const String delim = ",";
+  const char delim = ',';
+  const char term = '\0';
 
-  message =         String(reading[0], DEC) +
-            delim + String(reading[1], DEC) +
-            delim + String(reading[2], DEC) +
-            delim + String(reading[3], DEC) //+
-//            delim + String(reading[4], DEC) +
-//            delim + String(reading[5], DEC) +
-//            delim + String(reading[6], DEC) +
-//            delim + String(reading[7], DEC);
-;
-  Serial << "0,1024,";
+  // send the readings
+  for( byte i=0; i<Npins; i++ ) {
+    Serial << reading[i] << delim;
+    mySerial << reading[i] << delim;
+  }
+
+  // finish with OOR information and terminator
+  Serial << outOfRangeReading << endl;
+  mySerial << term << endl;
   
-  Serial << message << endl;
-
-  mySerial << message << endl;
 }
 
 

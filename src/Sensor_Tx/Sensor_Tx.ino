@@ -3,7 +3,7 @@
    We can have multiple sensors, and this is the i-th sensor.
 
    Publishes: skein/range/i/[0-7]: distance information, mm
-              skein/range/oor: distance corresponding to out-of-range, mm
+              skein/range/i/oor: distance corresponding to out-of-range, mm
 */
 
 // You'll need to add http://arduino.esp8266.com/stable/package_esp8266com_index.json to the Additional Board Managers URL entry in Preferences.
@@ -20,8 +20,8 @@
 byte subsetIndex = 1;
 
 const byte Nsensor = 8;
-word value[Nsensor];
 word range[Nsensor];
+word outOfRange;
 
 // connect to the MQTT network with this id
 String id = "skeinSensor" + String(subsetIndex, 10);
@@ -47,7 +47,6 @@ void setup(void)  {
 }
 
 void loop(void) {
-  static word updateCount = 0;
   
   // comms handling
   commsUpdate();
@@ -56,38 +55,17 @@ void loop(void) {
   if ( ! commsConnected() ) return;
 
   // sensor handling
+  static word updateCount = 0;
   if( mySerial.available()>0 ) {
-    message = mySerial.readStringUntil(',');
-    value[0] = message.toInt();
-    calculateRange(0);
-    publishRange(0);
-//    Serial << range[0] << ",";
-    
-    message = mySerial.readStringUntil(',');
-    value[1] = message.toInt();
-    calculateRange(1);
-    publishRange(1);
-//    Serial << range[1] << ",";
-
-    message = mySerial.readStringUntil(',');
-    value[2] = message.toInt();
-    calculateRange(2);
-    publishRange(2);
-//    Serial << range[2] << ",";
-
-    message = mySerial.readStringUntil('\n');
-    value[3] = message.toInt();
-    calculateRange(3);
-    publishRange(3);
-//    Serial << range[3] << endl;
-    
+    readPublishRanges();
     updateCount++;
   }
 
   // send oor information once every 30 seconds
   static Metro oorPubInterval(30UL * 1000UL);
   if ( commsConnected() && oorPubInterval.check() ) {
-//    commsPublish("skein/range/oor", String(outOfRange, 10));
+    String topic = "skein/range/" + String(subsetIndex, 10) + "/oor";
+    commsPublish(topic, String(outOfRange, 10));
     oorPubInterval.reset();
   }
 
@@ -103,6 +81,23 @@ void loop(void) {
   
 }
 
+void readPublishRanges() {
+  const char delim = ',';
+  const char term = '\0';
+
+  // get readings
+  for( byte i=0; i<Nsensor; i++ ) {
+    message = mySerial.readStringUntil(delim);
+    range[i] = message.toInt();
+    publishRange(i);
+  }
+
+  // get oor
+  message = mySerial.readStringUntil(term);
+  outOfRange = message.toInt();
+
+}
+
 void publishRange(byte index) {
 
   String topic = "skein/range/" + String(subsetIndex, 10) + "/" + String(index, 10);
@@ -110,22 +105,6 @@ void publishRange(byte index) {
 
   commsPublish(topic, message);
   yield();
-}
-
-float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
-  return (x-in_min)*(out_max-out_min)/(in_max-in_min)+out_min;
-}
-
-void calculateRange(byte index) {
-  float invValue = (float)constrain(value[index], 10, 1023);
-  invValue = 1.0/invValue;
-
-  const float minV = 1.0/1023.0;
-  const float maxV = 1.0/10.0;
-  float r = mapFloat(invValue, minV, maxV, 0.0, 2040.0)*10.0;
-  range[index] = r;
-//  Serial.print(range[index]);
-//  Serial << endl;
 }
 
 void commsProcess(String topic, String message) {
