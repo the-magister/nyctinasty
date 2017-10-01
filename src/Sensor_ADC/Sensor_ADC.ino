@@ -11,13 +11,19 @@ Metro updateWhile(updateInterval);
 const byte Npins = 8;
 
 // store readings
-uint32_t reading[Npins];
+unsigned long reading[Npins];
+unsigned long range[Npins];
 
 // set reading threshold; readings lower than this are oor
 const word threshold3000mm = 86;
 const word threshold2500mm = 102;
 const word threshold2000mm = 127;
 const word outOfRangeReading = threshold2000mm;
+
+// convert oor reading to oor distance
+const unsigned long magicNumberSlope = 266371;
+const unsigned long magicNumberIntercept = 87;
+const unsigned long outOfRangeDistance = magicNumberSlope/(unsigned long)outOfRangeReading - magicNumberIntercept;
 
 // defines for setting and clearing register bits
 #ifndef cbi
@@ -48,19 +54,23 @@ void setup() {
   // ADC prescalar
   // set prescale to 128
   // see: http://forum.arduino.cc/index.php?topic=6549.0
-  sbi(ADCSRA,ADPS2) ;
-  sbi(ADCSRA,ADPS1) ;
-  sbi(ADCSRA,ADPS0) ;
+  sbi(ADCSRA,ADPS2);
+  sbi(ADCSRA,ADPS1);
+  sbi(ADCSRA,ADPS0);
 
 }
 
 void loop() {
   // poll sensors
   readSensors();
+
+  // translate readings
+  calculateRanges();
   
   // send message
-  sendReadings();
+  sendRanges();
 }
+
 
 void readSensors() {
   // reset timer
@@ -84,18 +94,24 @@ void readSensors() {
   for( byte i=0; i<Npins; i++ ) reading[i] /= updates;
 }  
 
-void sendReadings() {
+void calculateRanges() {
+  
+  // calculate ranges
+  for( byte i=0; i<Npins; i++ ) range[i] = magicNumberSlope/reading[i] - magicNumberIntercept;
+}
+
+void sendRanges() {
   const char delim = ',';
   const char term = '\0';
 
   // send the readings
   for( byte i=0; i<Npins; i++ ) {
-    Serial << reading[i] << delim;
-    mySerial << reading[i] << delim;
+    Serial << range[i] << delim;
+    mySerial << range[i] << delim;
   }
 
   // finish with OOR information and terminator
-  Serial << outOfRangeReading << endl;
+  Serial << outOfRangeDistance << endl;
   mySerial << term << endl;
   
 }
