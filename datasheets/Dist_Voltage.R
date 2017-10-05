@@ -2,46 +2,52 @@
 require(tidyverse)
 require(magrittr)
 
-# from the datasheet
+# from the datasheet for GP2Y0A02YK0F
+
 d = tribble(
 	~Dist,~Volt,
 	
-	0,0.0326087,
-	10.0216,2.31522,
-	15.5172,2.74845,
-	20.3664,2.53416,
-	30.0647,1.99845,
-	40.4095,1.53727,
-	50.1078,1.24379,
-	60.1293,1.0528,
-	70.4741,0.903727,
-	80.1724,0.815217,
-	90.5172,0.731366,
-	100.539,0.666149,
-	110.237,0.60559,
-	120.259,0.568323,
-	129.957,0.526398,
-	139.978,0.493789,
-	149.677,0.465839
+151.948,	2.76803,
+201.299,	2.52545,
+297.403,	1.98601,
+403.896,	1.52617,
+500,	1.23281,
+598.701,	1.04801,
+700,	0.903016,
+798.701,	0.808688,
+898.701,	0.714358,
+997.403,	0.648981,
+1097.4,	0.590839,
+1201.3,	0.547162,
+1302.6,	0.517967,
+1401.3,	0.488779,
+1500,	0.45959
+
+) %>%
+mutate(
+	# assuming we have an external ADC reference of 2.75V
+	Reading = Volt/2.75 * 1023,
+	Reading = ifelse(Reading>1023, 1023, Reading)
 )
 
 # plot
-qplot(Volt, Dist, data=d)
+qplot(Reading, Dist, data=d)
 
 # accept that we can't easily figure out < 15 cm points
-d %<>% mutate(use = ifelse(Dist>15, T,F))
-duse = d %>% filter(use)
+duse = d 
 
-qplot(Volt, Dist, data=duse)
+qplot(Reading, Dist, data=duse)
 
 # can we easily linearlize this relationship?
-qplot(1/Volt, Dist, data=duse) + geom_smooth(method="lm")
+qplot(1/Reading, Dist, data=duse) + geom_smooth(method="lm")
+qplot(log(Reading), Dist, data=duse) + geom_smooth(method="lm")
 # yep
 
 # get the relationship
-fit = glm(Dist~I(1/Volt), data=duse)
+fit = glm(Dist~I(1/Reading), data=duse)
 # and it's valid range
-1/range(1/(duse$Volt))
+summary(fit)
+1/range(1/(duse$Reading))
 #Call:
 #glm(formula = Dist ~ I(1/Volt), data = duse)
 
@@ -64,17 +70,18 @@ fit = glm(Dist~I(1/Volt), data=duse)
 #
 #Number of Fisher Scoring iterations: 2
 
-Distance = function(Voltage) {
-	Voltage[Voltage<0.4] = 0.4 # edge case, and protect from div0
-	return( 73.2242*(1/Voltage) - 9.0036 )
+Distance = function(Reading) {
+	# don't believe anything greater than 3m
+	Reading = ifelse(Reading<85, 85, Reading)
+	return( 266370.97*(1/Reading) -86.48 )
 }
 
 # run a simulation to confirm
 dsim = data_frame(
-	Volt=seq(from=0.2,to=3,len=100),
-	Dist=Distance(Volt)
+	Reading=seq(from=50,to=1023),
+	Dist=Distance(Reading)
 )
-qplot(Volt, Dist, data=duse) + geom_line(data=dsim)
+qplot(Reading, Dist, data=duse) + geom_line(data=dsim)
 # excellent
 summary(fit)
 
