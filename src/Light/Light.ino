@@ -20,7 +20,8 @@
 const byte subsetIndex = 0;
 
 const byte Nsensor = 8;
-word range[Nsensor];
+word lidarRange[Nsensor];
+word sharpRange[Nsensor];
 word outOfRange = (1 << 11) - 1; // coresponds to a reading that's out-of-range
 
 // lighting
@@ -31,8 +32,10 @@ const byte NUM_LEDS = 1 + Nsensor;
 CRGBArray<NUM_LEDS> leds;
 const unsigned long targetFPS = 20;
 
-byte value[Nsensor];
-unsigned long avgValue[Nsensor];
+byte lidarValue[Nsensor];
+unsigned long lidarAvgValue[Nsensor];
+byte sharpValue[Nsensor];
+unsigned long sharpAvgValue[Nsensor];
 // linearize perception to value
 float R = (float)(outOfRange) / log2(255.0 + 1.0);
 
@@ -40,7 +43,8 @@ float R = (float)(outOfRange) / log2(255.0 + 1.0);
 String id = "skeinLight" + subsetIndex;
 
 // subscribe and process these topics
-String ranges = "skein/range/" + String(subsetIndex, 10) + "/#";
+//String ranges = "skein/range/" + String(subsetIndex, 10) + "/#";
+String ranges = "skein/range/#";   //    skein/range/0/0-7   lidar   skein/range/1/0-3 sharp
 String oor = "skein/range/oor";
 
 void setup(void)  {
@@ -59,12 +63,27 @@ void loop(void) {
   // comms handling
   commsUpdate();
 
+    for ( byte i = 0; i < Nsensor; i++ ) {
+      lidarValue[i] = 0;
+      lidarAvgValue[i] = 0;
+      sharpValue[i] = 0;
+      sharpAvgValue[i] = 0;
+    }
+
   // lights handling
   if ( commsConnected() ) {
+    /*
     for ( byte i = 0; i < Nsensor; i++ ) {
-      Serial << avgValue[i] << ",";
+      Serial << lidarAvgValue[i] << ",";
     }
     Serial << 255 << endl;
+    */
+    /*
+    for ( byte i = 0; i < Nsensor/2; i++ ) {
+      Serial << sharpAvgValue[i] << ",";
+    }
+    Serial << 255 << endl;
+    */
     // do stuff with FastLED to map range[] to lights
   }
 
@@ -86,28 +105,53 @@ void commsProcess(String topic, String message) {
     outOfRange = message.toInt();
     R = (float)(outOfRange) / log2(255.0 + 1.0);
     Serial << "oor=" << outOfRange << "\tR=" << R;
-  } else if ( topic.startsWith("skein/range") ) {
+  } else if ( topic.startsWith("skein/range/0") ) {  // lidar
     // take the last character of the topic as the range index
     topic.remove(0, topic.length() - 1);
     byte i = topic.toInt();
     word m = message.toInt();
 
     // cap range
-    range[i] = m < outOfRange ? m : outOfRange;
+    lidarRange[i] = m < outOfRange ? m : outOfRange;
     // see: https://diarmuid.ie/blog/pwm-exponential-led-fading-on-arduino-or-other-platforms/
-    value[i] = round( pow(2.0, (float)(outOfRange - range[i]) / R) - 1.0 );
+    lidarValue[i] = round( pow(2.0, (float)(outOfRange - lidarRange[i]) / R) - 1.0 );
     // average
-    const byte smoothing = 3;
-    avgValue[i] = (avgValue[i] * (smoothing - 1) + value[i]) / smoothing;
+    const byte lidarSmoothing = 3;
+    lidarAvgValue[i] = (lidarAvgValue[i] * (lidarSmoothing - 1) + lidarValue[i]) / lidarSmoothing;
     // set LED brightness by value
-    leds[1+i] = CHSV(HUE_BLUE, 0, avgValue[i]);
+    //leds[1+i] = CHSV(HUE_BLUE, 255, 2*lidarAvgValue[i]);
+    leds[1+i] = blend(leds[1+i],CHSV(HUE_BLUE, 255, lidarAvgValue[i]),(fract8)128);
+    /*
+    if (i==3) Serial << "Got lidar data: " << m << " oor: " << outOfRange << " val: " << lidarValue[i] << endl;
+*/
+    //    if( i==0 ) Serial << "range[" << i << "]=" << range[i] << "\tvalue[" << i << "]=" << value[i];
+  } else if ( topic.startsWith("skein/range/1") ) {  // sharp
+    
+    // take the last character of the topic as the range index
+    topic.remove(0, topic.length() - 1);
+    byte i = topic.toInt();
+    word m = message.toInt();
+
+    // cap range
+    sharpRange[i] = m < outOfRange ? m : outOfRange;
+    // see: https://diarmuid.ie/blog/pwm-exponential-led-fading-on-arduino-or-other-platforms/
+    sharpValue[i] = round( pow(2.0, (float)(outOfRange - sharpRange[i]) / R) - 1.0 );
+    //if (i==3) Serial << "Got sharp data: " << m << " oor: " << outOfRange << " val: " << sharpValue[i] << endl;
+
+    // average
+    const byte sharpSmoothing = 3;
+    sharpAvgValue[i] = (sharpAvgValue[i] * (sharpSmoothing - 1) + sharpValue[i]) / sharpSmoothing;
+    // set LED brightness by value
+    //leds[1+i] = CHSV(HUE_GREEN, 255, 2*sharpAvgValue[i]);
+    leds[1+i] = blend(leds[1+i],CHSV(HUE_GREEN, 255, sharpAvgValue[i]),(fract8)128);
 
     //    if( i==0 ) Serial << "range[" << i << "]=" << range[i] << "\tvalue[" << i << "]=" << value[i];
-  } else {
+  }  
+  else {
     Serial << F("WARNING. unknown topic. continuing.");
   }
 
-  Serial << endl;
+  //Serial << endl;
 }
 
 
