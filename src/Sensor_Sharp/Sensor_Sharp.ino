@@ -13,24 +13,33 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <SoftwareSerial.h>
-#include "Skein_Comms.h"
+#include <EasyTransfer.h>
+#include "Skein_MQTT.h"
+
+//create two objects
+EasyTransfer ETin, ETout;
+
+// store readings
+SensorReading reading;
+
+// store settings
+Command settings;
 
 // really need to save this to EEPROM
 // should we ever need to extend this to more uCs, this will generate an offset.
 byte subsetIndex = 1;
 
-const byte Nsensor = 8;
-word range[Nsensor];
-word outOfRange;
-
 // connect to the MQTT network with this id
 String id = "skeinSensor" + String(subsetIndex, 10);
 
-// subscribe and process these topics
-String control = "skein/control/#";
+// subscribe to these topics
+String settingsTopic = "skein/control/" + String(subsetIndex, 10);
+boolean settingsUpdate = false;
 
-SoftwareSerial mySerial(D5, D1); // D2, D1 / RX, TX; cross to other pair.
-String message;
+// publish to these topics
+String rangeTopic = "skein/range/" + String(subsetIndex, 10);
+
+SoftwareSerial mySerial(D5, D1, false, 256); // D2, D1 / RX, TX; cross to other pair.
 
 void setup(void)  {
   Serial.begin(115200);
@@ -39,15 +48,22 @@ void setup(void)  {
 
   // for remote output
   mySerial.begin(57600);
+  //start the library, pass in the data details and the name of the serial port. Can be Serial, Serial1, Serial2, etc.
+  ETin.begin(details(reading), &mySerial);
+  ETout.begin(details(settings), &mySerial);
 
-  commsBegin(id);
-  commsSubscribe(control);
+  // set and send fps to Sensor_ADC
+  settings.fps = 20;
+  saveCommand(settings);
+  loadCommand(settings);
+  ETout.sendData();
 
-  message.reserve(256);
+  commsBegin(id, 16);
+  commsSubscribe(settingsTopic, &settings, &settingsUpdate);
+
 }
 
 void loop(void) {
-  
   // comms handling
   commsUpdate();
 
@@ -56,63 +72,38 @@ void loop(void) {
 
   // sensor handling
   static word updateCount = 0;
-  if( mySerial.available()>0 ) {
-    readPublishRanges();
+  if ( ETin.receiveData() ) {
+    publishRanges();
     updateCount++;
   }
 
-  // send oor information once every 30 seconds
-  static Metro oorPubInterval(30UL * 1000UL);
-  if ( commsConnected() && oorPubInterval.check() ) {
-    String topic = "skein/range/" + String(subsetIndex, 10) + "/oor";
-    commsPublish(topic, String(outOfRange, 10));
-    oorPubInterval.reset();
+  // settings handling
+  if ( settingsUpdate ) {
+    settingsUpdate = false;
+    Serial << F("Settings. fps=") << settings.fps << endl;
+    saveCommand(settings);
+    ETout.sendData();
   }
 
   const unsigned long updateInterval = 10000UL;
   static Metro updateTimer(updateInterval);
-  if( updateTimer.check() ) {
+  if ( updateTimer.check() ) {
     Serial << "Update count: " << updateCount << endl;
     Serial << "Updates per second: ";
-    Serial.print( (float)updateCount / (float)(updateInterval/1000) );
+    Serial.print( (float)updateCount / (float)(updateInterval / 1000) );
     Serial << endl;
     updateCount = 0;
   }
-  
-}
-
-void readPublishRanges() {
-  const char delim = ',';
-  const char term = '\0';
-
-  // get readings
-  for( byte i=0; i<Nsensor; i++ ) {
-    message = mySerial.readStringUntil(delim);
-    range[i] = message.toInt();
-    publishRange(i);
-  }
-
-  // get oor
-  message = mySerial.readStringUntil(term);
-  outOfRange = message.toInt();
 
 }
 
-void publishRange(byte index) {
+void publishRanges() {
+  // bail out if no connection
+  if ( ! commsConnected() ) return;
 
-  String topic = "skein/range/" + String(subsetIndex, 10) + "/" + String(index, 10);
-  String message = String(range[index], 10);
-
-  commsPublish(topic, message);
+  commsPublish( rangeTopic, &reading );
   yield();
 }
 
-void commsProcess(String topic, String message) {
-  Serial << "<- " << topic << " " << message << "\t=> ";
-
-  Serial << F("WARNING. unknown topic. continuing.");
-
-  Serial << endl;
-}
 
 

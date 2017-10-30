@@ -13,39 +13,32 @@
 #include <FastLED.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
-#include "Skein_Comms.h"
-
-// really need to save this to EEPROM
-// should we ever need to extend this to more uCs, this will generate an offset.
-const byte subsetIndex = 0;
-
-const byte Nsensor = 8;
-word lidarRange[Nsensor];
-word sharpRange[Nsensor];
-word outOfRange = (1 << 11) - 1; // coresponds to a reading that's out-of-range
+#include "Skein_MQTT.h"
 
 // lighting
 // How many leds are in the strip?
-const byte NUM_LEDS = 1 + Nsensor;
+const byte NUM_LEDS = 1 + N_SENSOR;
 // Data pin that led data will be written out over
 #define DATA_PIN 12 // GPIO12/D6.
 CRGBArray<NUM_LEDS> leds;
 const unsigned long targetFPS = 20;
 
-byte lidarValue[Nsensor];
-unsigned long lidarAvgValue[Nsensor];
-byte sharpValue[Nsensor];
-unsigned long sharpAvgValue[Nsensor];
-// linearize perception to value
-float R = (float)(outOfRange) / log2(255.0 + 1.0);
-
 // connect to the MQTT network with this id
+byte subsetIndex = 0;
 String id = "skeinLight" + subsetIndex;
 
-// subscribe and process these topics
-//String ranges = "skein/range/" + String(subsetIndex, 10) + "/#";
-String ranges = "skein/range/#";   //    skein/range/0/0-7   lidar   skein/range/1/0-3 sharp
-String oor = "skein/range/oor";
+// subscribe to these topics
+String settingsTopic = "skein/control/" + String(subsetIndex, 10);
+Command settings;
+boolean settingsUpdate = false;
+
+String lidarTopic = "skein/range/0";
+SensorReading lidar;
+boolean lidarUpdate = false;
+
+String sharpTopic = "skein/range/1";
+SensorReading sharp;
+boolean sharpUpdate = false;
 
 void setup(void)  {
   Serial.begin(115200);
@@ -54,37 +47,48 @@ void setup(void)  {
 
   FastLED.addLeds<WS2811, DATA_PIN, RGB>(leds, NUM_LEDS);
 
-  commsBegin(id);
-  commsSubscribe(ranges);
-  commsSubscribe(oor);
+  commsBegin(id, 16);
+  commsSubscribe(settingsTopic, &settings, &settingsUpdate);
+  commsSubscribe(lidarTopic, &lidar, &lidarUpdate);
+  commsSubscribe(sharpTopic, &sharp, &sharpUpdate);
+
 }
 
 void loop(void) {
   // comms handling
   commsUpdate();
 
-    for ( byte i = 0; i < Nsensor; i++ ) {
-      lidarValue[i] = 0;
-      lidarAvgValue[i] = 0;
-      sharpValue[i] = 0;
-      sharpAvgValue[i] = 0;
-    }
+  // bail out if no connection
+  if ( ! commsConnected() ) return;
 
-  // lights handling
-  if ( commsConnected() ) {
-    /*
-    for ( byte i = 0; i < Nsensor; i++ ) {
-      Serial << lidarAvgValue[i] << ",";
+  // settings handling
+  if ( settingsUpdate ) {
+    settingsUpdate = false;
+    Serial << F("Settings. fps=") << settings.fps << endl;
+    saveCommand(settings);
+    // noting that we're not doing anything with this (currently)
+  }
+
+  // lidar handling
+  if ( lidarUpdate ) {
+    lidarUpdate = false;
+    Serial << F("Lidar") << endl;
+    float R = (float)(lidar.max) / log2(255.0 + 1.0);
+    for (byte i = 0; i < N_SENSOR; i++) {
+      byte value = round( pow(2.0, (float)(lidar.max - lidar.dist[i]) / R) - 1.0 );
+      leds[i+1] = blend(leds[i+1], CHSV(HUE_BLUE, 255, value), (fract8)128);
     }
-    Serial << 255 << endl;
-    */
-    /*
-    for ( byte i = 0; i < Nsensor/2; i++ ) {
-      Serial << sharpAvgValue[i] << ",";
+  }
+
+  // lidar handling
+  if ( sharpUpdate ) {
+    sharpUpdate = false;
+    Serial << F("Sharp") << endl;
+    float R = (float)(sharp.max) / log2(255.0 + 1.0);
+    for (byte i = 0; i < N_SENSOR; i++) {
+      byte value = round( pow(2.0, (float)(sharp.max - sharp.dist[i]) / R) - 1.0 );
+      leds[i+1] = blend(leds[i+1], CHSV(HUE_GREEN, 255, value), (fract8)128);
     }
-    Serial << 255 << endl;
-    */
-    // do stuff with FastLED to map range[] to lights
   }
 
   // DON'T hammer the LEDs.  the clockless protocol interferes with
@@ -96,6 +100,7 @@ void loop(void) {
   }
 }
 
+/*
 void commsProcess(String topic, String message) {
 
   //  Serial << "<- " << topic << " " << message << "\t=> ";
@@ -120,13 +125,14 @@ void commsProcess(String topic, String message) {
     lidarAvgValue[i] = (lidarAvgValue[i] * (lidarSmoothing - 1) + lidarValue[i]) / lidarSmoothing;
     // set LED brightness by value
     //leds[1+i] = CHSV(HUE_BLUE, 255, 2*lidarAvgValue[i]);
-    leds[1+i] = blend(leds[1+i],CHSV(HUE_BLUE, 255, lidarAvgValue[i]),(fract8)128);
+    leds[1 + i] = blend(leds[1 + i], CHSV(HUE_BLUE, 255, lidarAvgValue[i]), (fract8)128);
     /*
-    if (i==3) Serial << "Got lidar data: " << m << " oor: " << outOfRange << " val: " << lidarValue[i] << endl;
-*/
+      if (i==3) Serial << "Got lidar data: " << m << " oor: " << outOfRange << " val: " << lidarValue[i] << endl;
+    */
     //    if( i==0 ) Serial << "range[" << i << "]=" << range[i] << "\tvalue[" << i << "]=" << value[i];
+/*
   } else if ( topic.startsWith("skein/range/1") ) {  // sharp
-    
+
     // take the last character of the topic as the range index
     topic.remove(0, topic.length() - 1);
     byte i = topic.toInt();
@@ -143,10 +149,10 @@ void commsProcess(String topic, String message) {
     sharpAvgValue[i] = (sharpAvgValue[i] * (sharpSmoothing - 1) + sharpValue[i]) / sharpSmoothing;
     // set LED brightness by value
     //leds[1+i] = CHSV(HUE_GREEN, 255, 2*sharpAvgValue[i]);
-    leds[1+i] = blend(leds[1+i],CHSV(HUE_GREEN, 255, sharpAvgValue[i]),(fract8)128);
+    leds[1 + i] = blend(leds[1 + i], CHSV(HUE_GREEN, 255, sharpAvgValue[i]), (fract8)128);
 
     //    if( i==0 ) Serial << "range[" << i << "]=" << range[i] << "\tvalue[" << i << "]=" << value[i];
-  }  
+  }
   else {
     Serial << F("WARNING. unknown topic. continuing.");
   }
@@ -154,4 +160,4 @@ void commsProcess(String topic, String message) {
   //Serial << endl;
 }
 
-
+*/

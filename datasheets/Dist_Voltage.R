@@ -75,11 +75,22 @@ Distance = function(Reading) {
 	Reading = ifelse(Reading<85, 85, Reading)
 	return( 266370.97*(1/Reading) -86.48 )
 }
+Distance.FP = function(Reading) {
+	# don't believe anything greater than 3m
+	R.th = 86
+	# don't believe anything greater than 2.5m
+	R.th = 102
+	# don't believe anything greater than 2m
+	R.th = 127
+	
+	Reading = ifelse(Reading<R.th, R.th, Reading)
+	return( as.integer(266371/Reading) -87 )
+}
 
 # run a simulation to confirm
 dsim = data_frame(
 	Reading=seq(from=50,to=1023),
-	Dist=Distance(Reading)
+	Dist=Distance.FP(Reading)
 )
 qplot(Reading, Dist, data=duse) + geom_line(data=dsim)
 # excellent

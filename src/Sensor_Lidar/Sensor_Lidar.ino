@@ -14,11 +14,7 @@
 #include <VL53L0X.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
-#include "Skein_Comms.h"
-
-// really need to save this to EEPROM
-// should we ever need to extend this to more uCs, this will generate an offset.
-byte subsetIndex = 0;
+#include "Skein_MQTT.h"
 
 const byte Nsensor = 8;
 VL53L0X sensor[] = {
@@ -26,7 +22,6 @@ VL53L0X sensor[] = {
   VL53L0X(), VL53L0X(), VL53L0X(), VL53L0X()
 };
 boolean useSensor[Nsensor];
-word range[Nsensor];
 const word outOfRange = (1 << 11) - 1; // coresponds to a reading that's out-of-range, 2047 mm.
 const boolean LONG_RANGE = true;
 const boolean HIGH_SPEED = false;
@@ -34,11 +29,25 @@ const boolean HIGH_ACCURACY = true;
 
 const int measurePeriod = 50;
 
-// connect to the MQTT network with this id
-String id = "skeinSensor" + subsetIndex;
+// store settings
+Command settings;
 
-// subscribe and process these topics
-String control = "skein/control/#";
+// store readings
+SensorReading reading;
+
+// really need to save this to EEPROM
+// should we ever need to extend this to more uCs, this will generate an offset.
+byte subsetIndex = 0;
+
+// connect to the MQTT network with this id
+String id = "skeinSensor" + String(subsetIndex, 10);
+
+// subscribe to these topics
+String settingsTopic = "skein/control/" + String(subsetIndex, 10);
+boolean settingsUpdate = false;
+
+// publish to these topics
+String rangeTopic = "skein/range/" + String(subsetIndex, 10);
 
 void setup(void)  {
   Serial.begin(115200);
@@ -145,14 +154,19 @@ void setup(void)  {
     delay(100);
   }
 
-
   Serial << "Startup. continuous sensing started." << endl;
 
+  // set and send fps to Sensor_ADC
+  settings.fps = 20;
+  saveCommand(settings);
+  loadCommand(settings);
+  commsBegin(id, 16);
+  
+  commsSubscribe(settingsTopic, &settings, &settingsUpdate);
 
-
-  commsBegin(id);
-  commsSubscribe(control);
-
+  reading.max = (1 << 11) - 1;
+  reading.min = 0;
+  reading.noise = (float)reading.max / 10.0;
 }
 
 void loop(void) {
@@ -166,6 +180,7 @@ void loop(void) {
 
   // poll the sensors
   static byte index = 99;
+  static word updateCount = 0;
   index ++;
   if ( index >= Nsensor ) {
     index = 0;
@@ -174,41 +189,47 @@ void loop(void) {
   if ( !useSensor[index] ) return; // bail out and go again for the next sensor
 
   selectSensor(index);
-  range[index] = sensor[index].readRangeContinuousMillimeters();
+  reading.dist[index] = sensor[index].readRangeContinuousMillimeters();
   //range[index] = sensor[index].readRangeSingleMillimeters();
-
-  if (range[index] >= outOfRange) {
-    range[index] = outOfRange;
+  updateCount ++;
+  
+  if (reading.dist[index] >= reading.max ) {
+    reading.dist[index] = reading.max;
   }
 
-  Serial << range[index] << ",";
+  // publish on an interval
+  static Metro pubInterval(1000/settings.fps);
 
-
-  // publish
-  publishRange(index);
-
-  // send oor information once every 30 seconds
-  static Metro oorPubInterval(30UL * 1000UL);
-  if ( commsConnected() && oorPubInterval.check() ) {
-    commsPublish("skein/range/oor", String(outOfRange, 10));
-    oorPubInterval.reset();
+  // settings handling
+  if ( settingsUpdate ) {
+    Serial << F("Settings. fps=") << settings.fps << endl;
+    saveCommand(settings);
+    pubInterval.interval(1000/settings.fps);
   }
+
+  if ( pubInterval.check() ) {
+    publishRanges();
+    pubInterval.reset();
+  }
+  
+  const unsigned long updateInterval = 10000UL;
+  static Metro updateTimer(updateInterval);
+  if ( updateTimer.check() ) {
+    Serial << "Update count: " << updateCount << endl;
+    Serial << "Updates per second: ";
+    Serial.print( (float)updateCount / (float)(updateInterval / 1000) );
+    Serial << endl;
+    updateCount = 0;
+  }
+
 }
 
-void publishRange(byte index) {
+void publishRanges() {
+  // bail out if no connection
+  if ( ! commsConnected() ) return;
 
-  String topic = "skein/range/" + String(subsetIndex, 10) + "/" + String(index, 10);
-  String message = String(range[index], 10);
-
-  commsPublish(topic, message);
-}
-
-void commsProcess(String topic, String message) {
-  Serial << "<- " << topic << " " << message << "\t=> ";
-
-  Serial << F("WARNING. unknown topic. continuing.");
-
-  Serial << endl;
+  commsPublish( rangeTopic, &reading );
+  yield();
 }
 
 // handy helper
