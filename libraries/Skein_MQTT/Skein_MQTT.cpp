@@ -60,6 +60,7 @@ void commsCallback(char* topic, byte* payload, unsigned int length) {
 	// run through topics we're subscribed to
 	for( byte i=0;i < nTopics;i++ ) {
 		if( t.equals(subTopic[i]) ) {
+			//Serial << "Got msg.  len: " << length << endl;
 			memcpy( subStorage[i], (void*)payload, length );
 			*subUpdate[i] = true;
 			return;
@@ -75,9 +76,10 @@ void commsSubscribe(String topic, Command * command, boolean * updateFlag) {
 	commsSubscribe(topic, (void *) command, updateFlag);
 }
 void commsSubscribe(String topic, void * storage, boolean * updateFlag) {
-	subTopic[nTopics++] = topic;
+	subTopic[nTopics] = topic;
 	subStorage[nTopics] = storage;
 	subUpdate[nTopics] = updateFlag; 
+	nTopics++;
 }
 
 // publish to a topic
@@ -86,14 +88,15 @@ boolean commsPublish(String topic, SensorReading * reading) {
 	ledState = !ledState;
 	digitalWrite(myLED, ledState);
 
-	return mqtt.publish(topic.c_str(), (uint8_t *)reading, sizeof(reading));
+        //Serial << "Publish.  len: " << sizeof(SensorReading) << endl;
+	return mqtt.publish(topic.c_str(), (uint8_t *)reading, sizeof(SensorReading));
 }
 boolean commsPublish(String topic, Command * command) {
 	// toggle the LED when we get a new message
 	ledState = !ledState;
 	digitalWrite(myLED, ledState);
 
-	return mqtt.publish(topic.c_str(), (uint8_t *)command, sizeof(command));
+	return mqtt.publish(topic.c_str(), (uint8_t *)command, sizeof(Command));
 }
 
 void connectWiFi(String ssid, String passwd, unsigned long interval) {

@@ -202,12 +202,15 @@ void loop(void) {
 
   // settings handling
   if ( settingsUpdate ) {
+    settingsUpdate = false;
     Serial << F("Settings. fps=") << settings.fps << endl;
     saveCommand(settings);
     pubInterval.interval(1000/settings.fps);
   }
 
   if ( pubInterval.check() ) {
+    //Serial << reading.dist[4] << " ";
+
     publishRanges();
     pubInterval.reset();
   }
