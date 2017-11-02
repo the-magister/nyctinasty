@@ -15,13 +15,13 @@ SensorReading reading;
 Command settings;
 
 // set reading threshold; readings lower than this are oor
-const word threshold3000mm = 86;
-const word threshold2500mm = 102;
-const word threshold2000mm = 127;
-const word threshold1500mm = 167;
-const word threshold1000mm = 245;
-const word threshold500mm = 454;
-const word outOfRangeReading = threshold2500mm;
+const unsigned long threshold3000mm = 86;
+const unsigned long threshold2500mm = 102;
+const unsigned long threshold2000mm = 127;
+const unsigned long threshold1500mm = 167;
+const unsigned long threshold1000mm = 245;
+const unsigned long threshold500mm = 454;
+const unsigned long outOfRangeReading = threshold2500mm;
 
 // convert oor reading to oor distance
 const unsigned long magicNumberSlope = 266371;
@@ -85,6 +85,19 @@ void loop() {
   // poll sensors
   readSensors();
 
+  // we have missing sensors
+  reading.dist[4] = outOfRangeReading;
+  reading.dist[5] = outOfRangeReading;
+  reading.dist[6] = outOfRangeReading;
+  reading.dist[7] = outOfRangeReading;
+
+  // PRINT the readings
+  for ( byte i = 0; i < N_SENSOR; i++ ) {
+    Serial << reading.dist[i]  << ',';
+  }
+  Serial << 0 << ',' << 1023;
+  Serial << endl;
+
   // translate readings
   calculateRanges();
 
@@ -93,6 +106,7 @@ void loop() {
   reading.dist[5] = outOfRangeDistance;
   reading.dist[6] = outOfRangeDistance;
   reading.dist[7] = outOfRangeDistance;
+
 
   // check for settings
 //  checkCommands();
@@ -112,7 +126,7 @@ void readSensors() {
     for ( byte i = 0; i < N_SENSOR; i++ ) {
       unsigned long r = analogRead(i);
       r = r < outOfRangeReading ? outOfRangeReading : r;
-      reading.dist[i] = (reading.dist[i] * (smoothing - 1) + r) / smoothing;
+      reading.dist[i] = ((unsigned long)reading.dist[i] * (smoothing - 1) + r) / smoothing;
     }
     updates ++;
   }
@@ -146,13 +160,14 @@ void checkCommands() {
 
 
 void sendRanges() {
+/*
   // send the readings
   for ( byte i = 0; i < N_SENSOR; i++ ) {
     Serial << reading.dist[i]  << ',';
   }
   Serial << reading.min << ',' << reading.max;
   Serial << endl;
-
+*/
   mySerial.print( "MSG" );
   mySerial.write( (byte*)&reading, sizeof(reading));
   mySerial.flush();
