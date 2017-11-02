@@ -5,10 +5,6 @@
 #include <EEPROM.h>
 #include "Skein_Messages.h"
 
-#include <EasyTransfer.h>
-//create two objects
-EasyTransfer ETin, ETout; 
-
 // poll the analog pins every interval
 Metro updateWhile(50UL);
 
@@ -31,6 +27,7 @@ const word outOfRangeReading = threshold2500mm;
 const unsigned long magicNumberSlope = 266371;
 const unsigned long magicNumberIntercept = 87;
 const unsigned long outOfRangeDistance = magicNumberSlope / (unsigned long)outOfRangeReading - magicNumberIntercept;
+const unsigned long minDistance = 0;
 
 // defines for setting and clearing register bits
 #ifndef cbi
@@ -51,9 +48,6 @@ void setup() {
 
   // for remote output
   mySerial.begin(57600);
-  //start the library, pass in the data details and the name of the serial port. Can be Serial, Serial1, Serial2, etc.
-  ETin.begin(details(settings), &mySerial);
-  ETout.begin(details(reading), &mySerial);
 
   // put your setup code here, to run once:
   analogReference(EXTERNAL); // tune to 2.75V
@@ -73,6 +67,8 @@ void setup() {
   //  cbi(ADCSRA,ADPS0);
 
   // load settings
+  settings.fps = 20;
+  saveCommand(settings);
   loadCommand(settings);
   // reset the interval
   updateWhile.interval(1000UL/settings.fps);
@@ -99,7 +95,7 @@ void loop() {
   reading.dist[7] = outOfRangeDistance;
 
   // check for settings
-  checkCommands();
+//  checkCommands();
   
   // send message
   sendRanges();
@@ -130,6 +126,7 @@ void calculateRanges() {
   }
 }
 
+/*
 void checkCommands() {
 
   // check for commands
@@ -145,13 +142,20 @@ void checkCommands() {
   }
    
 }
+*/
+
 
 void sendRanges() {
   // send the readings
   for ( byte i = 0; i < N_SENSOR; i++ ) {
     Serial << reading.dist[i]  << ',';
   }
+  Serial << reading.min << ',' << reading.max;
   Serial << endl;
 
-  ETout.sendData();
+  mySerial.print( "MSG" );
+  mySerial.write( (byte*)&reading, sizeof(reading));
+  mySerial.flush();
+  
+//  Serial << "wrote bytes to mySerial:" << sizeof(reading) << endl;
 }

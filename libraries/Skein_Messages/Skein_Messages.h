@@ -9,19 +9,19 @@
 #define N_SENSOR 8
 typedef struct {
 	// out-of-range
-	word min,max;
+	uint16_t min,max;
 	
 	// noise level in readings
-	word noise; 
+	uint16_t noise; 
 	
 	// distance
-	word dist[N_SENSOR];
+	uint16_t dist[N_SENSOR];
 } SensorReading;
 
 // common command structure; commited to EEPROM and recalled at startup.
 typedef struct {
 	// send fps, frame = SensorReading
-	byte fps;
+	uint8_t fps;
 } Command;
 
 // save/load to/from EEPROM

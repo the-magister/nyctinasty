@@ -13,11 +13,7 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <SoftwareSerial.h>
-#include <EasyTransfer.h>
 #include "Skein_MQTT.h"
-
-//create two objects
-EasyTransfer ETin, ETout;
 
 // store readings
 SensorReading reading;
@@ -48,15 +44,12 @@ void setup(void)  {
 
   // for remote output
   mySerial.begin(57600);
-  //start the library, pass in the data details and the name of the serial port. Can be Serial, Serial1, Serial2, etc.
-  ETin.begin(details(reading), &mySerial);
-  ETout.begin(details(settings), &mySerial);
 
   // set and send fps to Sensor_ADC
   settings.fps = 20;
   saveCommand(settings);
-  loadCommand(settings);
-  ETout.sendData();
+//  loadCommand(settings);
+//  ETout.sendData();
 
   commsBegin(id, 16);
   commsSubscribe(settingsTopic, &settings, &settingsUpdate);
@@ -72,7 +65,17 @@ void loop(void) {
 
   // sensor handling
   static word updateCount = 0;
-  if ( ETin.receiveData() ) {
+  if ( mySerial.available() >= sizeof(reading)+3 ) {
+    if( !mySerial.find("MSG") ) return;
+    
+    byte buffer[sizeof(reading)];
+    byte length = mySerial.readBytes(buffer, sizeof(reading));
+ //   Serial << "message len:" << length << " reading size:" << sizeof(reading) << endl;
+    if( length == sizeof(reading) ) {
+      memcpy( (void *)&reading, (void *)&buffer, sizeof(reading) );
+ //     Serial << "dist0:" << reading.dist[0] << endl;      
+    }
+
     publishRanges();
     updateCount++;
   }
@@ -82,12 +85,13 @@ void loop(void) {
     settingsUpdate = false;
     Serial << F("Settings. fps=") << settings.fps << endl;
     saveCommand(settings);
-    ETout.sendData();
+ //   ETout.sendData();
   }
 
   const unsigned long updateInterval = 10000UL;
   static Metro updateTimer(updateInterval);
   if ( updateTimer.check() ) {
+    Serial << endl;
     Serial << "Update count: " << updateCount << endl;
     Serial << "Updates per second: ";
     Serial.print( (float)updateCount / (float)(updateInterval / 1000) );

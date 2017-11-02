@@ -21,8 +21,8 @@ GNU General Public License for more details.
 *To view a copy of this license, visit http://creativecommons.org/licenses/by-sa/3.0/ or
 *send a letter to Creative Commons, 444 Castro Street, Suite 900, Mountain View, California, 94041, USA.
 ******************************************************************/
-#ifndef EasyTransfer_h
-#define EasyTransfer_h
+#ifndef SoftEasyTransfer_h
+#define SoftEasyTransfer_h
 
 
 //make it a little prettier on the front end. 
@@ -31,25 +31,39 @@ GNU General Public License for more details.
 //Not neccessary, but just in case. 
 #if ARDUINO > 22
 #include "Arduino.h"
+#include <SoftwareSerial.h>
 #else
 #include "WProgram.h"
+#include <NewSoftSerial.h>
 #endif
-#include "Stream.h"
-//#include <NewSoftSerial.h>
+//#include "HardwareSerial.h"
+
+
 #include <math.h>
 #include <stdio.h>
 #include <stdint.h>
-//#include <avr/io.h>
+// #include <avr/io.h>
 
-class EasyTransfer {
+class SoftEasyTransfer {
 public:
-void begin(uint8_t *, uint8_t, Stream *theStream);
-//void begin(uint8_t *, uint8_t, NewSoftSerial *theSerial);
+//void begin(uint8_t *, uint8_t, HardwareSerial *theSerial);
+#if ARDUINO > 22
+void begin(uint8_t *, uint8_t, SoftwareSerial *theSerial);
+#else
+void begin(uint8_t *, uint8_t, NewSoftSerial *theSerial);
+#endif
 void sendData();
 boolean receiveData();
 private:
-Stream *_stream;
-//NewSoftSerial *_serial;
+//HardwareSerial *_serial;
+
+#if ARDUINO > 22
+SoftwareSerial *_serial;
+#else
+NewSoftSerial *_serial;
+#endif
+
+
 uint8_t * address;  //address of struct
 uint8_t size;       //size of struct
 uint8_t * rx_buffer; //address for temporary storage and parsing buffer

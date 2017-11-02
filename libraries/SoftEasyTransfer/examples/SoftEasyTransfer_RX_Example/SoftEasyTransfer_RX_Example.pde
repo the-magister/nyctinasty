@@ -1,22 +1,31 @@
-#include <EasyTransfer.h>
+#include <SoftEasyTransfer.h>
+
+/*   For Arduino 1.0 and newer, do this:   */
+#include <SoftwareSerial.h>
+SoftwareSerial mySerial(2, 3);
+
+/*   For Arduino 22 and older, do this:   */
+//#include <NewSoftSerial.h>
+//NewSoftSerial mySerial(2, 3);
+
 
 //create object
-EasyTransfer ET; 
+SoftEasyTransfer ET; 
 
 struct RECEIVE_DATA_STRUCTURE{
   //put your variable definitions here for the data you want to receive
   //THIS MUST BE EXACTLY THE SAME ON THE OTHER ARDUINO
-  int blinks;
-  int pause;
+  int16_t blinks;
+  int16_t pause;
 };
 
 //give a name to the group of data
 RECEIVE_DATA_STRUCTURE mydata;
 
 void setup(){
-  Serial.begin(9600);
-  //start the library, pass in the data details and the name of the serial port. Can be Serial, Serial1, Serial2, etc. 
-  ET.begin(details(mydata), &Serial);
+  mySerial.begin(9600);
+  //start the library, pass in the data details and the name of the serial port.
+  ET.begin(details(mydata), &mySerial);
   
   pinMode(13, OUTPUT);
   
@@ -34,7 +43,6 @@ void loop(){
       delay(mydata.pause * 100);
     }
   }
-  
   //you should make this delay shorter then your transmit delay or else messages could be lost
   delay(250);
 }

@@ -1,48 +1,78 @@
-#include "EasyTransfer.h"
+#include "SoftEasyTransfer.h"
 
 
 
 
+#if ARDUINO > 22
 //Captures address and size of struct
-void EasyTransfer::begin(uint8_t * ptr, uint8_t length, Stream *theStream){
+void SoftEasyTransfer::begin(uint8_t * ptr, uint8_t length, SoftwareSerial *theSerial){
 	address = ptr;
 	size = length;
-	_stream = theStream;
+	_serial = theSerial;
+
+	//dynamic creation of rx parsing buffer in RAM
+	rx_buffer = (uint8_t*) malloc(size);
+}
+
+#else
+//Captures address and size of struct
+void SoftEasyTransfer::begin(uint8_t * ptr, uint8_t length, NewSoftSerial *theSerial){
+	address = ptr;
+	size = length;
+	_serial = theSerial;
 	
 	//dynamic creation of rx parsing buffer in RAM
-	rx_buffer = (uint8_t*) malloc(size+1);
+	rx_buffer = (uint8_t*) malloc(size);
 }
 
+#endif
+
+#if ARDUINO > 22
 //Sends out struct in binary, with header, length info and checksum
-void EasyTransfer::sendData(){
+void SoftEasyTransfer::sendData(){
   uint8_t CS = size;
-  _stream->write(0x06);
-  _stream->write(0x85);
-  _stream->write(size);
+  _serial->write(0x06);
+  _serial->write(0x85);
+  _serial->write(size);
   for(int i = 0; i<size; i++){
     CS^=*(address+i);
-    _stream->write(*(address+i));
+    _serial->write(*(address+i));
   }
-  _stream->write(CS);
+  _serial->write(CS);
 
 }
+#else
+//Sends out struct in binary, with header, length info and checksum
+void SoftEasyTransfer::sendData(){
+  uint8_t CS = size;
+  _serial->print(0x06, BYTE);
+  _serial->print(0x85, BYTE);
+  _serial->print(size, BYTE);
+  for(int i = 0; i<size; i++){
+    CS^=*(address+i);
+    _serial->print(*(address+i), BYTE);
+  }
+  _serial->print(CS, BYTE);
 
-boolean EasyTransfer::receiveData(){
+}
+#endif
+
+boolean SoftEasyTransfer::receiveData(){
   
   //start off by looking for the header bytes. If they were already found in a previous call, skip it.
   if(rx_len == 0){
   //this size check may be redundant due to the size check below, but for now I'll leave it the way it is.
-    if(_stream->available() >= 3){
+    if(_serial->available() >= 3){
 	//this will block until a 0x06 is found or buffer size becomes less then 3.
-      while(_stream->read() != 0x06) {
+      while(_serial->read() != 0x06) {
 		//This will trash any preamble junk in the serial buffer
 		//but we need to make sure there is enough in the buffer to process while we trash the rest
 		//if the buffer becomes too empty, we will escape and try again on the next call
-		if(_stream->available() < 3)
+		if(_serial->available() < 3)
 			return false;
 		}
-      if (_stream->read() == 0x85){
-        rx_len = _stream->read();
+      if (_serial->read() == 0x85){
+        rx_len = _serial->read();
 		//make sure the binary structs on both Arduinos are the same size.
         if(rx_len != size){
           rx_len = 0;
@@ -52,10 +82,11 @@ boolean EasyTransfer::receiveData(){
     }
   }
   
-  //we get here if we already found the header bytes, the struct size matched what we know, and now we are byte aligned.
+  
+  
   if(rx_len != 0){
-    while(_stream->available() && rx_array_inx <= rx_len){
-      rx_buffer[rx_array_inx++] = _stream->read();
+    while(_serial->available() && rx_array_inx <= rx_len){
+      rx_buffer[rx_array_inx++] = _serial->read();
     }
     
     if(rx_len == (rx_array_inx-1)){
@@ -72,14 +103,14 @@ boolean EasyTransfer::receiveData(){
 		rx_array_inx = 0;
 		return true;
 		}
-		
+        
 	  else{
 	  //failed checksum, need to clear this out anyway
 		rx_len = 0;
 		rx_array_inx = 0;
 		return false;
-	  }
-        
+	  }	
+		
     }
   }
   
