@@ -75,8 +75,9 @@ void loop(void) {
     Serial << F("Lidar") << endl;
     float R = (float)(lidar.max) / log2(255.0 + 1.0);
     for (byte i = 0; i < N_SENSOR; i++) {
-      byte value = round( pow(2.0, (float)(lidar.max - lidar.dist[i]) / R) - 1.0 );
-      leds[i+1] = blend(leds[i+1], CHSV(HUE_BLUE, 255, value), (fract8)128);
+//      byte value = round( pow(2.0, (float)(lidar.max - lidar.dist[i]) / R) - 1.0 );
+      byte value = distanceToBrightness( lidar.dist[i], lidar.max, lidar.min, 255, 0 );
+      leds[i + 1] = blend(leds[i + 1], CHSV(HUE_BLUE, 255, value), (fract8)128);
     }
   }
 
@@ -86,8 +87,9 @@ void loop(void) {
     Serial << F("Sharp") << endl;
     float R = (float)(sharp.max) / log2(255.0 + 1.0);
     for (byte i = 0; i < N_SENSOR; i++) {
-      byte value = round( pow(2.0, (float)(sharp.max - sharp.dist[i]) / R) - 1.0 );
-      leds[i+1] = blend(leds[i+1], CHSV(HUE_GREEN, 255, value), (fract8)128);
+//      byte value = round( pow(2.0, (float)(sharp.max - sharp.dist[i]) / R) - 1.0 );
+      byte value = distanceToBrightness( sharp.dist[i], sharp.max, sharp.min, 255, 0 );
+      leds[i + 1] = blend(leds[i + 1], CHSV(HUE_GREEN, 255, value), (fract8)128);
     }
   }
 
@@ -100,64 +102,34 @@ void loop(void) {
   }
 }
 
-/*
-void commsProcess(String topic, String message) {
 
-  //  Serial << "<- " << topic << " " << message << "\t=> ";
+// gamma correction table; a linear distance index into this array will correct for nonlinear perception
+uint8_t const exp_gamma[256] =
+{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3,
+  4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 9, 9, 9, 10, 10, 10, 11, 11, 12, 12, 12, 13, 13, 14, 14, 14, 15, 15,
+  16, 16, 17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 23, 23, 24, 24, 25, 26, 26, 27, 28, 28, 29, 30, 30, 31, 32, 32, 33,
+  34, 35, 35, 36, 37, 38, 39, 39, 40, 41, 42, 43, 44, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,
+  61, 62, 63, 64, 65, 66, 67, 68, 70, 71, 72, 73, 74, 75, 77, 78, 79, 80, 82, 83, 84, 85, 87, 89, 91, 92, 93, 95, 96, 98,
+  99, 100, 101, 102, 105, 106, 108, 109, 111, 112, 114, 115, 117, 118, 120, 121, 123, 125, 126, 128, 130, 131, 133,
+  135, 136, 138, 140, 142, 143, 145, 147, 149, 151, 152, 154, 156, 158, 160, 162, 164, 165, 167, 169, 171, 173, 175,
+  177, 179, 181, 183, 185, 187, 190, 192, 194, 196, 198, 200, 202, 204, 207, 209, 211, 213, 216, 218, 220, 222, 225,
+  227, 229, 232, 234, 236, 239, 241, 244, 246, 249, 251, 253, 254, 255
+};
 
-  if ( topic.equals(oor) ) {
+byte distanceToBrightness( uint16_t distance, uint16_t distanceMax, uint16_t distanceMin, byte brightMax, byte brightMin ) {
 
-    outOfRange = message.toInt();
-    R = (float)(outOfRange) / log2(255.0 + 1.0);
-    Serial << "oor=" << outOfRange << "\tR=" << R;
-  } else if ( topic.startsWith("skein/range/0") ) {  // lidar
-    // take the last character of the topic as the range index
-    topic.remove(0, topic.length() - 1);
-    byte i = topic.toInt();
-    word m = message.toInt();
+  // enforce constraint
+  distance = constrain( distance, distanceMin, distanceMax );
 
-    // cap range
-    lidarRange[i] = m < outOfRange ? m : outOfRange;
-    // see: https://diarmuid.ie/blog/pwm-exponential-led-fading-on-arduino-or-other-platforms/
-    lidarValue[i] = round( pow(2.0, (float)(outOfRange - lidarRange[i]) / R) - 1.0 );
-    // average
-    const byte lidarSmoothing = 3;
-    lidarAvgValue[i] = (lidarAvgValue[i] * (lidarSmoothing - 1) + lidarValue[i]) / lidarSmoothing;
-    // set LED brightness by value
-    //leds[1+i] = CHSV(HUE_BLUE, 255, 2*lidarAvgValue[i]);
-    leds[1 + i] = blend(leds[1 + i], CHSV(HUE_BLUE, 255, lidarAvgValue[i]), (fract8)128);
-    /*
-      if (i==3) Serial << "Got lidar data: " << m << " oor: " << outOfRange << " val: " << lidarValue[i] << endl;
-    */
-    //    if( i==0 ) Serial << "range[" << i << "]=" << range[i] << "\tvalue[" << i << "]=" << value[i];
-/*
-  } else if ( topic.startsWith("skein/range/1") ) {  // sharp
+  // map, noting we map distanceMin to brightMax, etc.
+  byte distByte = map( distance, distanceMin, distanceMax, (uint16_t)brightMax, (uint16_t)brightMin );
 
-    // take the last character of the topic as the range index
-    topic.remove(0, topic.length() - 1);
-    byte i = topic.toInt();
-    word m = message.toInt();
-
-    // cap range
-    sharpRange[i] = m < outOfRange ? m : outOfRange;
-    // see: https://diarmuid.ie/blog/pwm-exponential-led-fading-on-arduino-or-other-platforms/
-    sharpValue[i] = round( pow(2.0, (float)(outOfRange - sharpRange[i]) / R) - 1.0 );
-    //if (i==3) Serial << "Got sharp data: " << m << " oor: " << outOfRange << " val: " << sharpValue[i] << endl;
-
-    // average
-    const byte sharpSmoothing = 3;
-    sharpAvgValue[i] = (sharpAvgValue[i] * (sharpSmoothing - 1) + sharpValue[i]) / sharpSmoothing;
-    // set LED brightness by value
-    //leds[1+i] = CHSV(HUE_GREEN, 255, 2*sharpAvgValue[i]);
-    leds[1 + i] = blend(leds[1 + i], CHSV(HUE_GREEN, 255, sharpAvgValue[i]), (fract8)128);
-
-    //    if( i==0 ) Serial << "range[" << i << "]=" << range[i] << "\tvalue[" << i << "]=" << value[i];
-  }
-  else {
-    Serial << F("WARNING. unknown topic. continuing.");
-  }
-
-  //Serial << endl;
+  // linearize distance to perception via table lookup
+  return( exp_gamma[distByte] );
 }
 
-*/
+// was: byte value = round( pow(2.0, (float)(lidar.max - lidar.dist[i]) / R) - 1.0 );
+
+
+
+
