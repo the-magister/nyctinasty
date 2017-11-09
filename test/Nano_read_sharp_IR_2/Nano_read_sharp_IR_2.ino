@@ -53,14 +53,8 @@ void loop() {
   // poll sensors
   readSensors();
 
-  // we have missing sensors
-  reading.dist[4] = reading.max;
-  reading.dist[5] = reading.max;
-  reading.dist[6] = reading.max;
-  reading.dist[7] = reading.max;
-
   // print the readings
-  printRanges();
+//  printRanges();
 
   // send message
   sendRanges();
@@ -90,8 +84,10 @@ void readSensors() {
   updateWhile.reset();
   
   unsigned long updates = 0;
-  static uint32_t smoothing = 3;
-  static uint32_t values[N_SENSOR];
+  static uint32_t smoothing = 100;
+  static uint32_t values[] = {500,500,500,500,500,500,500,500};
+  static uint32_t maxValues[] = {800,800,800,800,800,800,800,800};
+  static uint32_t minValues[] = {500,500,500,500,500,500,500,500};
   
   // get a bunch of readings
   while ( !updateWhile.check() ) {
@@ -102,14 +98,31 @@ void readSensors() {
     }
     updates ++;
   }
+  float voltage = 2.72 * (float)values[0] / float(1023);
   smoothing = updates;
+  Serial << minValues[0] << "," << maxValues[0] << "," << values[0];
+//  Serial << "," << _FLOAT(voltage, 4) << "," << smoothing;
 
+  float invReading = 1e3/values[0];
+  float invMax = 1e3/4.0;
+  float invMin = 1e3/988.0;
+  float magicNumber = 458.0;
+  float ret = mapfloat(invReading, invMin, invMax, 10.0, 3000.0);
+  uint16_t ret2 = readingToDistance( values[0] );
+//  float ret = invReading / 1.700 * 355.0;
+//  Serial << "," << _FLOAT(invMax,4);
+//  Serial << "," << _FLOAT(invMin,4);
+//  Serial << "," << _FLOAT(invReading,4);
+//  Serial << "," << _FLOAT(ret,4);
+  Serial << "," << ret2;
+  Serial << endl;
   
   // convert to ranges
   for ( byte i = 0; i < N_SENSOR; i++ ) {
+    if( values[i] > maxValues[i] ) maxValues[i] = values[i];
+    if( values[i] < minValues[i] ) minValues[i] = values[i];
 //    reading.dist[i] = readingToDistance2(values[i], minValues[i], maxValues[i]);
-//    reading.dist[i] = readingToDistance(map(values[i], minValues[i], maxValues[i], oorReading, 1023));
-    reading.dist[i] = readingToDistance( values[i] );
+    reading.dist[i] = readingToDistance(map(values[i], minValues[i], maxValues[i], oorReading, 1023));
   }
   
 }
@@ -129,7 +142,7 @@ uint16_t readingToDistance2( float reading, float minReading, float maxReading )
 }
 
 float mapfloat(float x, float in_min, float in_max, float out_min, float out_max ) {
-  return (x-in_min)*(out_max-out_min)/(in_max-in_min)+out_max;
+  return (x-in_min)*(out_max-out_min)/(in_max-in_min)+out_min;
 }
 
 uint16_t readingToDistance( uint32_t reading ) {

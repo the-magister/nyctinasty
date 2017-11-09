@@ -25,7 +25,7 @@ const unsigned long targetFPS = 20;
 
 // connect to the MQTT network with this id
 byte subsetIndex = 0;
-String id = "skeinLight" + subsetIndex;
+String id = "skeinLight" + String(subsetIndex, 10);
 
 // subscribe to these topics
 String settingsTopic = "skein/control/" + String(subsetIndex, 10);
@@ -72,24 +72,29 @@ void loop(void) {
   // lidar handling
   if ( lidarUpdate ) {
     lidarUpdate = false;
-    Serial << F("Lidar") << endl;
-    float R = (float)(lidar.max) / log2(255.0 + 1.0);
+//    Serial << F("Lidar") << endl;
+//    float R = (float)(lidar.max) / log2(255.0 + 1.0);
     for (byte i = 0; i < N_SENSOR; i++) {
 //      byte value = round( pow(2.0, (float)(lidar.max - lidar.dist[i]) / R) - 1.0 );
-      byte value = distanceToBrightness( lidar.dist[i], lidar.max, lidar.min, 255, 0 );
-      leds[i + 1] = blend(leds[i + 1], CHSV(HUE_BLUE, 255, value), (fract8)128);
+      byte value = distanceToBrightness( lidar.dist[i], lidar.min, lidar.max );
+//      leds[i + 1] = blend(leds[i + 1], CHSV(HUE_BLUE, 255, value), (fract8)128);
+      leds[i + 1] = CRGB(leds[i + 1].red, leds[i + 1].green, value);
     }
   }
 
-  // lidar handling
+  // sharp handling
   if ( sharpUpdate ) {
     sharpUpdate = false;
-    Serial << F("Sharp") << endl;
-    float R = (float)(sharp.max) / log2(255.0 + 1.0);
+   // Serial << F("Sharp") << endl;
+//    float R = (float)(sharp.max) / log2(255.0 + 1.0);
     for (byte i = 0; i < N_SENSOR; i++) {
 //      byte value = round( pow(2.0, (float)(sharp.max - sharp.dist[i]) / R) - 1.0 );
-      byte value = distanceToBrightness( sharp.dist[i], sharp.max, sharp.min, 255, 0 );
-      leds[i + 1] = blend(leds[i + 1], CHSV(HUE_GREEN, 255, value), (fract8)128);
+      byte value = distanceToBrightness( sharp.dist[i], sharp.min, sharp.max);
+      if( i == 3 ) {
+        Serial << sharp.dist[i] << "," << sharp.max << "," << sharp.noise << "," << sharp.min << "," << value << endl;
+      }
+//      leds[i + 1] = blend(leds[i + 1], CHSV(HUE_GREEN, 255, value), (fract8)128);
+      leds[i + 1] = CRGB(leds[i + 1].red, value, leds[i + 1].blue);
     }
   }
 
@@ -116,16 +121,16 @@ uint8_t const exp_gamma[256] =
   227, 229, 232, 234, 236, 239, 241, 244, 246, 249, 251, 253, 254, 255
 };
 
-byte distanceToBrightness( uint16_t distance, uint16_t distanceMax, uint16_t distanceMin, byte brightMax, byte brightMin ) {
+uint8_t distanceToBrightness( uint16_t distance, uint16_t distanceMin, uint16_t distanceMax ) {
 
   // enforce constraint
   distance = constrain( distance, distanceMin, distanceMax );
 
   // map, noting we map distanceMin to brightMax, etc.
-  byte distByte = map( distance, distanceMin, distanceMax, (uint16_t)brightMax, (uint16_t)brightMin );
+  uint16_t distByte = map( distance, distanceMin, distanceMax, (uint16_t)255, (uint16_t)0 );
 
   // linearize distance to perception via table lookup
-  return( exp_gamma[distByte] );
+  return( exp_gamma[(uint8_t)distByte] );
 }
 
 // was: byte value = round( pow(2.0, (float)(lidar.max - lidar.dist[i]) / R) - 1.0 );
