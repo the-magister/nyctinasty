@@ -6,7 +6,7 @@
 #include "Skein_Messages.h"
 
 // poll the analog pins for this long
-unsigned long sensorPollTime = 50UL; // ms
+unsigned long sensorPollTime = 20UL; // ms
 
 // store readings
 SensorReading reading = defaultSensorReading;
@@ -15,10 +15,11 @@ SensorReading reading = defaultSensorReading;
 Command settings = defaultCommand;
 
 // set reading threshold; readings lower than this are oor
+#define OOR reading2500mm
+#define NOISE reading2000mm
 const unsigned long reading3000mm = 86;
 const unsigned long reading2500mm = 102;
 const unsigned long reading2000mm = 127;
-const unsigned long oorReading = reading3000mm;
 
 // for comms
 SoftwareSerial mySerial(3, 2); // RX, TX; cross to other pair.
@@ -44,8 +45,8 @@ void setup() {
 
   // save reading information
   reading.min = 0;
-  reading.max = readingToDistance(oorReading);
-  reading.noise = readingToDistance(reading2500mm);
+  reading.max = readingToDistance(OOR);
+  reading.noise = readingToDistance(NOISE);
 
 }
 
@@ -73,11 +74,13 @@ void loop() {
     unsigned long elapsed = millis() - tic;
 //    Serial << F("Update interval.  actual=") << elapsed/updates << F(" target=") << 1000UL/settings.fps << endl;
     
-    if( elapsed/updates > (1000UL/settings.fps+1) ) sensorPollTime--;
-    if( elapsed/updates < (1000UL/settings.fps-1) ) sensorPollTime++;
-    
-//    Serial << F("sensor poll time: ") << sensorPollTime << endl;
-    
+    if( elapsed/updates > (1000UL/settings.fps+1) ) {
+      Serial << F("sensor poll time DOWN 1 to: ") << --sensorPollTime << endl;
+    }
+    if( elapsed/updates < (1000UL/settings.fps-1) ) {
+      Serial << F("sensor poll time UP 1 to: ") << ++sensorPollTime << endl;      
+    }
+
     tic = millis();
     updates = 0;
   }
@@ -97,13 +100,15 @@ void readSensors() {
   while ( !updateWhile.check() ) {
     for ( byte i = 0; i < N_SENSOR; i++ ) {
       unsigned long r = analogRead(i);
- //     r = r < oorReading ? oorReading : r;
+//      r = r < oorReading ? oorReading : r;
       values[i] = (values[i] * (smoothing - 1) + r) / smoothing;
     }
     updates ++;
   }
-  smoothing = updates;
-
+  if( smoothing != updates ) {
+    Serial << "smoothing moved to:" << updates << endl;
+    smoothing = updates;
+  }
   
   // convert to ranges
   for ( byte i = 0; i < N_SENSOR; i++ ) {
@@ -136,7 +141,7 @@ uint16_t readingToDistance( uint32_t reading ) {
   const uint32_t magicNumberSlope = 266371;
   const uint32_t magicNumberIntercept = 87;
   // prevent div0 or exceeding 16 bits of information
-  reading = reading < oorReading ? oorReading : reading;
+  reading = reading < OOR ? OOR : reading;
 //  reading = reading < 6 ? 6 : reading;
   
   uint16_t distance = magicNumberSlope / (uint32_t)reading - magicNumberIntercept;
