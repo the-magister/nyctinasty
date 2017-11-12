@@ -19,7 +19,7 @@
 // How many leds are in the strip?
 const byte NUM_LEDS = 1 + N_SENSOR;
 // Data pin that led data will be written out over
-#define DATA_PIN 12 // GPIO12/D6.
+#define DATA_PIN 4 // wire to lights
 CRGBArray<NUM_LEDS> leds;
 const unsigned long targetFPS = 20;
 
@@ -40,6 +40,9 @@ String sharpTopic = "skein/range/1";
 SensorReading sharp;
 boolean sharpUpdate = false;
 
+#define BLUE_LED 2
+#define RED_LED 0
+
 void setup(void)  {
   Serial.begin(115200);
   delay(20);
@@ -47,7 +50,7 @@ void setup(void)  {
 
   FastLED.addLeds<WS2811, DATA_PIN, RGB>(leds, NUM_LEDS);
 
-  commsBegin(id, 16);
+  commsBegin(id, BLUE_LED);
   commsSubscribe(settingsTopic, &settings, &settingsUpdate);
   commsSubscribe(lidarTopic, &lidar, &lidarUpdate);
   commsSubscribe(sharpTopic, &sharp, &sharpUpdate);
@@ -85,13 +88,13 @@ void loop(void) {
   // sharp handling
   if ( sharpUpdate ) {
     sharpUpdate = false;
-   // Serial << F("Sharp") << endl;
+//    Serial << F("Sharp") << endl;
 //    float R = (float)(sharp.max) / log2(255.0 + 1.0);
     for (byte i = 0; i < N_SENSOR; i++) {
 //      byte value = round( pow(2.0, (float)(sharp.max - sharp.dist[i]) / R) - 1.0 );
-      byte value = distanceToBrightness( sharp.dist[i], sharp.min, sharp.max);
-      if( i == 3 ) {
-        Serial << sharp.dist[i] << "," << sharp.max << "," << sharp.noise << "," << sharp.min << "," << value << endl;
+      byte value = distanceToBrightness( sharp.dist[i], sharp.min, sharp.noise);
+      if( sharp.dist[i] < sharp.noise ) {
+//        Serial << i << "," << sharp.dist[i] << "," << sharp.max << "," << sharp.noise << "," << sharp.min << "," << value << endl;
       }
 //      leds[i + 1] = blend(leds[i + 1], CHSV(HUE_GREEN, 255, value), (fract8)128);
       leds[i + 1] = CRGB(leds[i + 1].red, value, leds[i + 1].blue);
