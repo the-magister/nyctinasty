@@ -11,6 +11,9 @@
 #include <Streaming.h>
 #include <Metro.h>
 #include <SoftwareSerial.h>
+#include <EEPROM.h>
+#include "Skein_Messages.h"
+#include <SoftEasyTransfer.h>
 #define FASTLED_ESP8266_RAW_PIN_ORDER
 #include <FastLED.h>
 
@@ -22,7 +25,14 @@
 #define L1 4
 #define L2 5
 
-SoftwareSerial mySerial(RX, TX, false, 256); 
+SoftwareSerial mySerial(RX, TX, false, 256);
+SoftEasyTransfer ETin, ETout;
+
+// store readings
+SensorReading readings;
+
+// store settings
+Command settings;
 
 const byte NUM_LEDS = 12;
 CRGBArray<NUM_LEDS> light0;
@@ -35,26 +45,66 @@ void setup(void)  {
 
   // for remote output
   mySerial.begin(57600);
+  // messages
+  ETin.begin(details(readings), &mySerial);
+  ETout.begin(details(settings), &mySerial);
+
+  // load settings
+  loadCommand(settings);
+  ETout.sendData(); // send target FPS
 
   FastLED.addLeds<WS2811, L1, RGB>(light0, NUM_LEDS);
   FastLED.addLeds<WS2811, L2, RGB>(light1, NUM_LEDS);
+  FastLED.setMaxRefreshRate(settings.fps);
 
-  light0(0,NUM_LEDS-1) = CRGB(255,0,0);
+  light0(0, NUM_LEDS - 1) = CRGB::White;
+  light0(0, NUM_LEDS - 1) = CRGB::White;
   FastLED.show();
 }
 
 void loop(void) {
+  // can't use FastLED's .show() routine, as that has a blocking loop/wait
+  static Metro showInterval(1000UL / settings.fps);
+  if ( showInterval.check() ) {
+    FastLED.show();
+    showInterval.reset();
+  }
+
+  // check for data
   static boolean LEDstate = false;
-  if( mySerial.available() ) {
-    int value = mySerial.parseInt();
-    int scaled = map(value, 0, 1023, 1, 255);
-    Serial << value << "," << scaled << endl;
+  if ( ETin.receiveData() ) {
     LEDstate = !LEDstate;
     digitalWrite(BLU_LED, LEDstate);
-    
-    light0(0,NUM_LEDS-1) = CHSV(HUE_GREEN, 128, scaled);
-    light1(0,NUM_LEDS-1) = CHSV(HUE_BLUE, 128, scaled);
+
+    setLEDs();
     FastLED.show();
+    showInterval.reset();
   }
+}
+
+void setLEDs() {
+  // shift the last frame down the structure
+  light0 >>= 4;
+  light1 >>= 4;
+  
+  // set color, maximal
+  light0(0, 3) = CRGB::Green;
+  light1(0, 3) = CRGB::Blue;
+
+  // scale readings
+  uint16_t scaled[N_SENSOR] = {0};
+  for(byte i=0; i<N_SENSOR; i++ ) {
+    scaled[i] = map(readings.dist[0], readings.min, readings.max, (uint16_t)0, (uint16_t)255);
+  }
+
+  // dim/fade lighting by scaled distance
+  light0[0] %= scaled[3];
+  light0[1] %= scaled[2];
+  light0[2] %= scaled[1];
+  light0[3] %= scaled[0];
+  light1[0] %= scaled[4];
+  light1[1] %= scaled[5];
+  light1[2] %= scaled[6];
+  light1[3] %= scaled[7];
 }
 

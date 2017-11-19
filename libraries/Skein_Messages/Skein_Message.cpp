@@ -9,5 +9,11 @@ void saveCommand(Command command) {
 
 void loadCommand(Command command) {
 	EEPROM.get(EEPROM_LOCATION, command);
+	
+	// unitialized?
+	if( command.fps == 255 ) {
+		command = defaultCommand;
+		saveCommand( command );
+	}
 }
 

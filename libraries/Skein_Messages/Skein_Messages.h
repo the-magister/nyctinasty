@@ -18,13 +18,6 @@ typedef struct {
 	uint16_t dist[N_SENSOR];
 } SensorReading;
 
-// with a default
-const SensorReading defaultSensorReading = {
-	0, 2500,
-	1500,
-	2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500
-};
-
 // common command structure; commited to EEPROM and recalled at startup.
 typedef struct {
 	// send fps, frame = SensorReading
