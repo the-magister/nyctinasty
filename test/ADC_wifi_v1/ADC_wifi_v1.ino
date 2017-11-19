@@ -43,23 +43,42 @@ void setup(void)  {
   delay(10);
   Serial << endl << endl << "Startup." << endl;
 
+  pinMode(BLU_LED, OUTPUT);
+  pinMode(RED_LED, OUTPUT);
+  
   // for remote output
   mySerial.begin(57600);
+  while( !mySerial ) delay(5);
+  
   // messages
   ETin.begin(details(readings), &mySerial);
   ETout.begin(details(settings), &mySerial);
 
   // load settings
-  loadCommand(settings);
-  ETout.sendData(); // send target FPS
+//  EEPROM.begin(512); // required for ESPers
+//  settings = loadCommand();
+  settings.fps = defaultFPS;
+//  saveCommand(settings);
+//  EEPROM.commit();
+  
+  Serial << "Startup. fps=" << settings.fps << endl;
+//  ETout.sendData(); // send target FPS
 
+  delay(1000);
+  
   FastLED.addLeds<WS2811, L1, RGB>(light0, NUM_LEDS);
   FastLED.addLeds<WS2811, L2, RGB>(light1, NUM_LEDS);
   FastLED.setMaxRefreshRate(settings.fps);
 
   light0(0, NUM_LEDS - 1) = CRGB::White;
-  light0(0, NUM_LEDS - 1) = CRGB::White;
+  light1(0, NUM_LEDS - 1) = CRGB::White;
   FastLED.show();
+  delay(500);
+  light0(0, NUM_LEDS - 1) = CRGB::Black;
+  light1(0, NUM_LEDS - 1) = CRGB::Black;
+  FastLED.show();
+
+  Serial << "Startup complete." << endl;
 }
 
 void loop(void) {
@@ -70,16 +89,18 @@ void loop(void) {
     showInterval.reset();
   }
 
+
   // check for data
-  static boolean LEDstate = false;
+  static boolean LEDred = false;
   if ( ETin.receiveData() ) {
-    LEDstate = !LEDstate;
-    digitalWrite(BLU_LED, LEDstate);
+    LEDred = !LEDred;
+    digitalWrite(RED_LED, LEDred);
 
     setLEDs();
     FastLED.show();
     showInterval.reset();
   }
+
 }
 
 void setLEDs() {
@@ -94,7 +115,7 @@ void setLEDs() {
   // scale readings
   uint16_t scaled[N_SENSOR] = {0};
   for(byte i=0; i<N_SENSOR; i++ ) {
-    scaled[i] = map(readings.dist[0], readings.min, readings.max, (uint16_t)0, (uint16_t)255);
+    scaled[i] = map(readings.dist[0], readings.min, readings.max, (uint16_t)255, (uint16_t)0);
   }
 
   // dim/fade lighting by scaled distance

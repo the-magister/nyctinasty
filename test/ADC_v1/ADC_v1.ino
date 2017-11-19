@@ -10,6 +10,7 @@
 #define LED 13
 #define RX 2
 #define TX 3
+#define VH 6
 // A0..A7 are also used
 // wire 6.8kOhm resistor between +3.3 and AREF.
 
@@ -30,11 +31,16 @@ void setup() {
   // for local output
   Serial.begin(115200);
 
+  // send 5V to the level shifter for a reference.
+  pinMode(VH, OUTPUT);
+  digitalWrite(VH, HIGH);
+  
   // for remote output
   mySerial.begin(57600);
-
+  while( !mySerial ) delay(5);
+  
   // messages
-  ETin.begin(details(settings), &mySerial);
+//  ETin.begin(details(settings), &mySerial);
   ETout.begin(details(readings), &mySerial);
 
   // put your setup code here, to run once:
@@ -42,8 +48,7 @@ void setup() {
   // has 32K built-in resistor.
   // connect AREF to +3.3v via 6.8 kOhm resistor
 
-  // load settings
-  loadCommand(settings);
+  settings = loadCommand();
   targetCycleTime = cycleTime(settings.fps);
 }
 
@@ -71,18 +76,18 @@ void loop() {
   if ( timer > targetCycleTime * 2 ) {
     // bit depth is too high
     if ( additionalBits > 0 ) --additionalBits;
-    Serial << F("Timing.  Adjusting additionalBits down to ") << additionalBits << endl;
-  } else if (timer < targetCycleTime / 2) {
+    Serial << F("Timing.  cycle=") << timer << F("ms. Adjusting additionalBits down to ") << additionalBits << endl;
+  } else if (timer < targetCycleTime / 2 ) {
     // bit depth is too low
     if ( additionalBits < 6 ) ++additionalBits;
-    Serial << F("Timing.  Adjusting additionalBits up to ") << additionalBits << endl;
+    Serial << F("Timing.  cycle=") << timer << F("ms. Adjusting additionalBits up to ") << additionalBits << endl;
   }
 
   // save and apply settings
-  if ( ETin.receiveData() ) {  
-    saveCommand(settings);
-    targetCycleTime = cycleTime(settings.fps);
-  }
+//  if ( ETin.receiveData() ) {  
+//    targetCycleTime = cycleTime(settings.fps);
+//    saveCommand(settings);
+//  }
 }
 
 // read sensors, using oversampling and decimation to gain additional bit depth
@@ -108,10 +113,10 @@ void readSensors(byte additionalBits) {
   // set the noise floor in LSB
   const byte dropBits = 1;
   readings.noise = ((uint16_t)1 << (10 + additionalBits - dropBits)) - (uint16_t)1;
-
+  
   // decimate
   for ( byte i = 0; i < N_SENSOR; i++ ) {
-    readings.dist[i] = readings.max - (values[i] >> count);
+    readings.dist[i] = readings.max - (uint16_t)values[i];
   }
 
 }
@@ -119,7 +124,6 @@ void readSensors(byte additionalBits) {
 // compute maximum cycle time from target fps
 unsigned long cycleTime(byte fps) {
   settings.fps = fps;
-  saveCommand(settings);
 
   unsigned long time = 1000UL / (unsigned long)settings.fps; // ms
   Serial << F("Settings.  fps=") << settings.fps << F(" cycle time=") << time << F(" ms") << endl;

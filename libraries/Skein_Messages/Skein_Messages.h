@@ -24,11 +24,11 @@ typedef struct {
 	uint8_t fps;
 } Command;
 
-// with a default 
-const Command defaultCommand = { 20 };
+// default fps
+const byte defaultFPS = 33;
 
 // save/load to/from EEPROM
 void saveCommand(Command command);
-void loadCommand(Command command);
+Command loadCommand();
 
 #endif
