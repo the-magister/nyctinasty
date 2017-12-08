@@ -1,15 +1,13 @@
 // Compile for Wemos D1 R2 & Mini
 // keep an windward eye on dynamic memory usage: may need to go up to an ESP32
-//#include <Eigen.h>     // Calls main Eigen matrix class library
-//#include <Eigen/LU>             // Calls inverse, determinant, LU decomp., etc.
-//using namespace Eigen;    // Eigen related statement; simplifies syntax for declaration of matrices
-#include <FastLED.h>
-#include <Nyctinasty_Messages.h>
 #include <Metro.h>
 #include <Streaming.h>
-#include <ESP8266WiFi.h>
-#include <PubSubClient.h>
-#include <Nyctinasty_Comms.h>
+#include <Eigen.h>     
+#include <Eigen/LU>    
+using namespace Eigen;    // simplifies syntax for declaration of matrices
+#include <FastLED.h>
+#include "Nyctinasty_Messages.h"
+#include "Nyctinasty_Comms.h"
 
 // who am I?
 const byte seepleNumber = 0;

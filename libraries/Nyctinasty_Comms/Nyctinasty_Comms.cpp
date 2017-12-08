@@ -52,8 +52,18 @@ String commsIdSeepleArchMotion(byte seepleNumber, byte archNumber) {
 void commsBegin(String id, byte ledPin) {
 	Serial << "commsBegin with id: " << id << endl;
 	
+// variation in WiFi library calls btw ESP8266 and ESP32
+#ifdef ARDUINO_ARCH_ESP32
+	// station mode
+	WiFi.mode(WIFI_MODE_STA);
+#endif 
+#ifdef ARDUINO_ARCH_ESP8266
 	// don't allow the WiFi module to sleep.	
-//	WiFi.setSleepMode(WIFI_NONE_SLEEP);
+	WiFi.setSleepMode(WIFI_NONE_SLEEP);
+	// station mode
+	WiFi.mode(WIFI_STA);
+#endif 
+
 	WiFi.disconnect();
 	
 	myID = id;

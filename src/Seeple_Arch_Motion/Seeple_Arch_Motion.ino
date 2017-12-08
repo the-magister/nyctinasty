@@ -1,11 +1,9 @@
 // compile for WEMOS LOLIN32
 #include <Streaming.h>
 #include <Metro.h>
-#include "Nyctinasty_Messages.h"
-#include <WiFi.h>
-#include <PubSubClient.h>
-#include "Nyctinasty_Comms.h"
 #include <arduinoFFT.h>
+#include "Nyctinasty_Messages.h"
+#include "Nyctinasty_Comms.h"
 
 // who am I?
 const byte seepleNumber = 0;

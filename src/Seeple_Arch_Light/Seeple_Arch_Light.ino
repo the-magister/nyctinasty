@@ -1,13 +1,13 @@
 // Compile for Wemos D1 R2 & Mini
-#define FASTLED_ESP8266_RAW_PIN_ORDER
-#define FASTLED_INTERRUPT_RETRY_COUNT 1
-#include <FastLED.h>
-#include <Nyctinasty_Messages.h>
 #include <Metro.h>
 #include <Streaming.h>
-#include <ESP8266WiFi.h>
-#include <PubSubClient.h>
-#include <Nyctinasty_Comms.h>
+// pin order
+#define FASTLED_ESP8266_RAW_PIN_ORDER
+// with retries on strip updates
+#define FASTLED_INTERRUPT_RETRY_COUNT 1
+#include <FastLED.h>
+#include "Nyctinasty_Messages.h"
+#include "Nyctinasty_Comms.h"
 
 // who am I?
 const byte seepleNumber = 0;
