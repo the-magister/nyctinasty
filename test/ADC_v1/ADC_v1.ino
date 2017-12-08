@@ -10,7 +10,6 @@
 #define LED 13
 #define RX 2
 #define TX 3
-#define VH 6
 // A0..A7 are also used
 // wire 6.8kOhm resistor between +3.3 and AREF.
 
@@ -31,16 +30,12 @@ void setup() {
   // for local output
   Serial.begin(115200);
 
-  // send 5V to the level shifter for a reference.
-  pinMode(VH, OUTPUT);
-  digitalWrite(VH, HIGH);
-  
   // for remote output
-  mySerial.begin(57600);
-  while( !mySerial ) delay(5);
+//  mySerial.begin(57600);
+  mySerial.begin(115200);
   
   // messages
-//  ETin.begin(details(settings), &mySerial);
+  ETin.begin(details(settings), &mySerial);
   ETout.begin(details(readings), &mySerial);
 
   // put your setup code here, to run once:
@@ -48,7 +43,9 @@ void setup() {
   // has 32K built-in resistor.
   // connect AREF to +3.3v via 6.8 kOhm resistor
 
-  settings = loadCommand();
+//  settings = loadCommand();
+  settings.fps = defaultFPS;
+//  saveCommand(settings);
   targetCycleTime = cycleTime(settings.fps);
 }
 

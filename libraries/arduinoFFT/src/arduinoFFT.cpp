@@ -161,7 +161,7 @@ double arduinoFFT::MajorPeak(double *vD, uint16_t samples, double samplingFreque
 		}
 	}
 	double delta = 0.5 * ((vD[IndexOfMaxY-1] - vD[IndexOfMaxY+1]) / (vD[IndexOfMaxY-1] - (2.0 * vD[IndexOfMaxY]) + vD[IndexOfMaxY+1]));
-	double interpolatedX = ((IndexOfMaxY + delta)  * samplingFrequency) / (samples-1);
+	double interpolatedX = (((double)IndexOfMaxY + delta)  * samplingFrequency) / (double)(samples-1);
 	/* retuned value: interpolated frequency peak apex */
 	return(interpolatedX);
 }
