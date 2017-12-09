@@ -10,13 +10,13 @@ typedef struct {
 	uint8_t fps=100;
 } SystemCommand;
 
-// number of seeples
-#define N_SEEPLES 3
+// number of Sepals
+#define N_SepalS 3
 
-// number of arches per seeple
+// number of arches per Sepal
 #define N_ARCHES 3
 
-// distance sensors on the seeple arches
+// distance sensors on the Sepal arches
 #define N_SENSOR 8
 typedef struct {
 	// min and max range information
@@ -27,7 +27,7 @@ typedef struct {
 	
 	// proximity.  bigger numbers = closer to arch
 	uint16_t prox[N_SENSOR]={0};
-} SeepleArchDistance;
+} SepalArchDistance;
 // size_of = 2*(3+8) = 22 bytes
 
 // FFT analysis of the distance data
@@ -41,18 +41,18 @@ typedef struct {
 	// sampling rate of each sensor, Hz
 	double samplingFrequency={0};
 	// the specific frequency of power[i][j] is (j+1)*samplingFrequency/N_FREQ_SAMPLES
-} SeepleArchFreq;
+} SepalArchFreq;
 
-// lights on the seeple arches, as a crazy-big structure
+// lights on the Sepal arches, as a crazy-big structure
 #define N_LEDS_UP 16
 #define N_LEDS_DOWN 16
 typedef struct {
-	CRGB bar[N_SENSOR]; // seepleArchBar[0] leftmost
+	CRGB bar[N_SENSOR]; // SepalArchBar[0] leftmost
 	CRGB leftUp[N_LEDS_UP]; // leftUp[NUM_LEDS_UP-1] leftmost and top of the up segment
 	CRGB rightUp[N_LEDS_UP]; // rightUp(5,6) rightmost; up segment's 5th and 6th led.
 	CRGB leftDown[N_LEDS_DOWN]; // leftDown.fill_rainbow(HUE_BLUE, 5) left "leg" is colorful.
 	CRGB rightDown[N_LEDS_DOWN]; // rightDown[1].blur1d(128) rightmost top of the down segment is blurry
-} SeepleArchLight;
+} SepalArchLight;
 // size_of = 3*(8+2*16+2*16) = 216 bytes
 
 #endif

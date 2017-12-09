@@ -33,18 +33,18 @@ boolean commsPublish(String topic, uint8_t * msg, unsigned int msgBytes);
 void toggleLED();
 
 // build an MQTT id, which must be unique.
-String commsIdSeepleCoordinator(byte seepleNumber);
-String commsIdSeepleArchLight(byte seepleNumber, byte archNumber);
-String commsIdSeepleArchMotion(byte seepleNumber, byte archNumber);
+String commsIdSepalCoordinator(byte sepalNumber);
+String commsIdSepalArchLight(byte sepalNumber, byte archNumber);
+String commsIdSepalArchMotion(byte sepalNumber, byte archNumber);
 
 // startup.  use unique id that's built by the commsId* helpers. 
 void commsBegin(String id, byte ledPin=BUILTIN_LED);
 
 // build a MQTT topic, for use with subscribe and publish routines.
 String commsTopicSystemCommand();
-String commsTopicLight(byte seepleNumber, byte archNumber);
-String commsTopicDistance(byte seepleNumber, byte archNumber);
-String commsTopicFreq(byte seepleNumber, byte archNumber);
+String commsTopicLight(byte sepalNumber, byte archNumber);
+String commsTopicDistance(byte sepalNumber, byte archNumber);
+String commsTopicFreq(byte sepalNumber, byte archNumber);
 
 // subscribe to a topic, provide storage for the payload, provide a flag for update indicator
 template <class T>

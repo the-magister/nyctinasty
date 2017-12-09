@@ -6,9 +6,9 @@
 #include "Nyctinasty_Comms.h"
 
 // who am I?
-const byte seepleNumber = 0;
+const byte SepalNumber = 0;
 const byte archNumber = 0;
-const String id = commsIdSeepleArchMotion(seepleNumber, archNumber);
+const String id = commsIdSepalArchMotion(SepalNumber, archNumber);
 
 // ship settings
 SystemCommand settings;
@@ -18,14 +18,14 @@ const String settingsTopic = commsTopicSystemCommand();
 boolean settingsUpdate = false;
 
 // our distance updates send as this structure
-SeepleArchDistance dist;
+SepalArchDistance dist;
 // in this topic
-const String distTopic = commsTopicDistance(seepleNumber, archNumber);
+const String distTopic = commsTopicDistance(SepalNumber, archNumber);
 
 // our frequency updates send as this structure
-SeepleArchFreq freq;
+SepalArchFreq freq;
 // in this topic
-const String freqTopic = commsTopicFreq(seepleNumber, archNumber);
+const String freqTopic = commsTopicFreq(SepalNumber, archNumber);
 
 // ADC on ESP32
 // https://esp-idf.readthedocs.io/en/v2.0/api/peripherals/adc.html

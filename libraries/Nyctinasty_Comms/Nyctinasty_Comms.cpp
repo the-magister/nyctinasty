@@ -24,26 +24,26 @@ const String lightFunction = "Light";
 const String motionFunction = "Motion";
 const String freqFunction = "Freq";
 
-String commsIdSeepleCoordinator(byte seepleNumber) {
+String commsIdSepalCoordinator(byte sepalNumber) {
 	return(
 		preface + nameSep + 
 			coordinatorFunction + nameSep + 
-				String(seepleNumber,10)  
+				String(sepalNumber,10)  
 	);
 }
-String commsIdSeepleArchLight(byte seepleNumber, byte archNumber) {
+String commsIdSepalArchLight(byte sepalNumber, byte archNumber) {
 	return( 
 		preface + nameSep + 
 			lightFunction + nameSep + 
-				String(seepleNumber,10) + nameSep + 
+				String(sepalNumber,10) + nameSep + 
 					String(archNumber,10)
 	);
 }
-String commsIdSeepleArchMotion(byte seepleNumber, byte archNumber) {
+String commsIdSepalArchMotion(byte sepalNumber, byte archNumber) {
 	return( 
 		preface + nameSep + 
 			motionFunction + nameSep + 
-				String(seepleNumber,10) + nameSep + 
+				String(sepalNumber,10) + nameSep + 
 					String(archNumber,10)
 	);
 
@@ -122,28 +122,28 @@ String commsTopicSystemCommand() {
 	);
 
 }
-String commsTopicLight(byte seepleNumber, byte archNumber) {
+String commsTopicLight(byte sepalNumber, byte archNumber) {
 	return( 
 		preface + topicSep + 
 			lightFunction + topicSep + 
-				String(seepleNumber,10) + topicSep + 
+				String(sepalNumber,10) + topicSep + 
 					String(archNumber,10)
 	);
 }
-String commsTopicDistance(byte seepleNumber, byte archNumber) {
+String commsTopicDistance(byte sepalNumber, byte archNumber) {
 	return( 
 		preface + topicSep + 
 			motionFunction + topicSep + 
-				String(seepleNumber,10) + topicSep + 
+				String(sepalNumber,10) + topicSep + 
 					String(archNumber,10)
 	);
 
 }
-String commsTopicFreq(byte seepleNumber, byte archNumber) {
+String commsTopicFreq(byte sepalNumber, byte archNumber) {
 	return( 
 		preface + topicSep + 
 			freqFunction + topicSep + 
-				String(seepleNumber,10) + topicSep + 
+				String(sepalNumber,10) + topicSep + 
 					String(archNumber,10)
 	);
 

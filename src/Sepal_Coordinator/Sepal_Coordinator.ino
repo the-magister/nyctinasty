@@ -5,13 +5,13 @@
 #include <Eigen.h>     
 #include <Eigen/LU>    
 using namespace Eigen;    // simplifies syntax for declaration of matrices
-#include <FastLED.h>
+#include <FastLED.h>      // seems to need to be after the namespace 
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
 
 // who am I?
-const byte seepleNumber = 0;
-const String id = commsIdSeepleCoordinator(seepleNumber);
+const byte SepalNumber = 0;
+const String id = commsIdSepalCoordinator(SepalNumber);
 
 // ship settings
 SystemCommand settings;
@@ -21,32 +21,32 @@ const String settingsTopic = commsTopicSystemCommand();
 boolean settingsUpdate = false;
 
 // our led updates send as this structure
-SeepleArchLight lights[N_ARCHES];
+SepalArchLight lights[N_ARCHES];
 // in these topics
 const String lightsTopic[N_ARCHES] = {
-  commsTopicLight(seepleNumber, 0),
-  commsTopicLight(seepleNumber, 1),
-  commsTopicLight(seepleNumber, 2)
+  commsTopicLight(SepalNumber, 0),
+  commsTopicLight(SepalNumber, 1),
+  commsTopicLight(SepalNumber, 2)
 };
 
 // our distance updates arrive as this structure
-SeepleArchDistance dist[N_ARCHES];
+SepalArchDistance dist[N_ARCHES];
 // in these topics
 const String distTopic[N_ARCHES] = {
-  commsTopicDistance(seepleNumber, 0),
-  commsTopicDistance(seepleNumber, 1),
-  commsTopicDistance(seepleNumber, 2)
+  commsTopicDistance(SepalNumber, 0),
+  commsTopicDistance(SepalNumber, 1),
+  commsTopicDistance(SepalNumber, 2)
 };
 // and sets this true when an update arrives
 boolean distUpdate[N_ARCHES] = {false};
 
 // our distance updates arrive as this structure
-SeepleArchFreq freq[N_ARCHES];
+SepalArchFreq freq[N_ARCHES];
 // in these topics
 const String freqTopic[N_ARCHES] = {
-  commsTopicFreq(seepleNumber, 0),
-  commsTopicFreq(seepleNumber, 1),
-  commsTopicFreq(seepleNumber, 2)
+  commsTopicFreq(SepalNumber, 0),
+  commsTopicFreq(SepalNumber, 1),
+  commsTopicFreq(SepalNumber, 2)
 };
 // and sets this true when an update arrives
 boolean freqUpdate[N_ARCHES] = {false};
@@ -130,7 +130,7 @@ void loop() {
 
 }
 
-// publishing this is the job of Seeple_Coordinator
+// publishing this is the job of Sepal_Coordinator
 void simulateUpDown() {
 
   // adjust the bar

@@ -10,9 +10,9 @@
 #include "Nyctinasty_Comms.h"
 
 // who am I?
-const byte seepleNumber = 0;
+const byte SepalNumber = 0;
 const byte archNumber = 0;
-const String id = commsIdSeepleArchLight(seepleNumber, archNumber);
+const String id = commsIdSepalArchLight(SepalNumber, archNumber);
 
 // ship settings
 SystemCommand settings;
@@ -22,9 +22,9 @@ const String settingsTopic = commsTopicSystemCommand();
 boolean settingsUpdate = false;
 
 // our led updates come as this structure
-SeepleArchLight lights;
+SepalArchLight lights;
 // in this topic
-const String lightsTopic = commsTopicLight(seepleNumber, archNumber);
+const String lightsTopic = commsTopicLight(SepalNumber, archNumber);
 // and sets this true when an update arrives
 boolean lightsUpdate = false;
 
