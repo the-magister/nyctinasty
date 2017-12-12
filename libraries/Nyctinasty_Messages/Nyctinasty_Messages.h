@@ -7,11 +7,11 @@
 // command structure
 typedef struct {
 	// send fps, frame = SensorReading
-	uint8_t fps=100;
+	uint8_t fps=20;
 } SystemCommand;
 
 // number of Sepals
-#define N_SepalS 3
+#define N_SEPALS 3
 
 // number of arches per Sepal
 #define N_ARCHES 3
@@ -19,6 +19,9 @@ typedef struct {
 // distance sensors on the Sepal arches
 #define N_SENSOR 8
 typedef struct {
+	// track provenance
+	byte sepal, arch;
+
 	// min and max range information
 	uint16_t min=0, max=(1<<12)-1; // 12-bit ADC
 	
@@ -32,8 +35,10 @@ typedef struct {
 
 // FFT analysis of the distance data
 #define N_FREQ_SAMPLES (uint16_t)(1<<8)  // This value MUST ALWAYS be a power of 2
-#define N_FREQ_BINS ((N_FREQ_SAMPLES)/2-1) // number of discrete frequency bins 
+#define N_FREQ_BINS ((N_FREQ_SAMPLES >> 1)-1) // number of discrete frequency bins 
 typedef struct {
+	// track provenance
+	byte sepal, arch;
 	// average power; something like the mean of the frequency bins
 	double avgPower[N_SENSOR]={0.0};
 	// frequency power
@@ -47,6 +52,7 @@ typedef struct {
 #define N_LEDS_UP 16
 #define N_LEDS_DOWN 16
 typedef struct {
+	byte sepal, arch; // track provenance
 	CRGB bar[N_SENSOR]; // SepalArchBar[0] leftmost
 	CRGB leftUp[N_LEDS_UP]; // leftUp[NUM_LEDS_UP-1] leftmost and top of the up segment
 	CRGB rightUp[N_LEDS_UP]; // rightUp(5,6) rightmost; up segment's 5th and 6th led.

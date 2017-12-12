@@ -19,14 +19,14 @@ SystemCommand settings;
 // in this topic
 const String settingsTopic = commsTopicSystemCommand();
 // and sets this true when an update arrives
-boolean settingsUpdate = false;
+//boolean settingsUpdate = false;
 
 // our led updates come as this structure
 SepalArchLight lights;
 // in this topic
 const String lightsTopic = commsTopicLight(SepalNumber, archNumber);
 // and sets this true when an update arrives
-boolean lightsUpdate = false;
+//boolean lightsUpdate = false;
 
 // pins to data lines
 #define DATA_PIN_LeftDown D5
@@ -34,7 +34,7 @@ boolean lightsUpdate = false;
 #define DATA_PIN_RightUp D7
 #define DATA_PIN_LeftUp D8
 
-// our internal storage, mapped to the hardware.  
+// our internal storage, mapped to the hardware.
 // pay no attention to the man behind the curtain.
 // could this be done with pointers to save memory and possibly improve speed?
 // yes. knock yourself out.
@@ -51,8 +51,10 @@ void setup() {
   Serial.begin(115200);
 
   commsBegin(id);
-  commsSubscribe(settingsTopic, &settings, &settingsUpdate);
-  commsSubscribe(lightsTopic, &lights, &lightsUpdate);
+  //  commsSubscribe(settingsTopic, &settings, &settingsUpdate);
+  //  commsSubscribe(lightsTopic, &lights, &lightsUpdate);
+  commsSubscribe(settingsTopic, &settings, settingsUpdate);
+  commsSubscribe(lightsTopic, &lights, lightsUpdate);
   commsUpdate();
 
   FastLED.addLeds<WS2811, DATA_PIN_LeftDown, RGB>(ledsLeftDown, ledsLeftDown.size()).setCorrection(COLOR_CORRECTION);
@@ -97,16 +99,16 @@ void applyToHardware() {
   ledsRightUp(0, halfBar) = ledsRightDown(0, halfBar);
 
   // down lights update
-  CRGBSet leftDown(lights.leftDown, N_LEDS_DOWN);  
-  CRGBSet rightDown(lights.rightDown, N_LEDS_DOWN);  
+  CRGBSet leftDown(lights.leftDown, N_LEDS_DOWN);
+  CRGBSet rightDown(lights.rightDown, N_LEDS_DOWN);
   const uint16_t startDown = halfBar + 1;
   const uint16_t endDown = ledsLeftDown.size() - 1;
   ledsLeftDown(startDown, endDown) = leftDown;
   ledsRightDown(startDown, endDown) = rightDown;
 
   // up lights update
-  CRGBSet leftUp(lights.leftUp, N_LEDS_UP);  
-  CRGBSet rightUp(lights.rightUp, N_LEDS_UP);  
+  CRGBSet leftUp(lights.leftUp, N_LEDS_UP);
+  CRGBSet rightUp(lights.rightUp, N_LEDS_UP);
   const uint16_t startUp = halfBar + 1;
   const uint16_t endUp = ledsLeftUp.size() - 1;
   ledsLeftUp(startUp, endUp) = leftUp;
@@ -124,6 +126,16 @@ void pushToHardware() {
   }
 }
 
+void lightsUpdate() {
+  // push the message array to the hardware.
+  applyToHardware();
+
+}
+
+void settingsUpdate() {
+
+}
+
 void loop() {
   // comms handling
   commsUpdate();
@@ -131,21 +143,28 @@ void loop() {
   // bail out if not connected
   if ( ! commsConnected() ) return;
 
-  // check for settings update
-  if( settingsUpdate ) {
-    settingsUpdate = false;
-  }
-  
-  // check for an update to lights
-  if ( lightsUpdate ) {    
-    // push the message array to the hardware.
-    applyToHardware();
-
+  EVERY_N_MILLISECONDS( 20 ) {
     // show
     pushToHardware();
-
-    // reset
-    lightsUpdate = false;
   }
+  /*
+    // check for settings update
+    if( settingsUpdate ) {
+      settingsUpdate = false;
+    }
+  */
+  /*
+    // check for an update to lights
+    if ( lightsUpdate ) {
+      // push the message array to the hardware.
+      applyToHardware();
+
+      // show
+      pushToHardware();
+
+      // reset
+      lightsUpdate = false;
+    }
+  */
 }
 

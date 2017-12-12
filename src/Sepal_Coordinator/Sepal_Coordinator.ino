@@ -2,10 +2,11 @@
 // keep an windward eye on dynamic memory usage: may need to go up to an ESP32
 #include <Metro.h>
 #include <Streaming.h>
-#include <Eigen.h>     
-#include <Eigen/LU>    
+#include <Eigen.h>
+#include <Eigen/LU>
 using namespace Eigen;    // simplifies syntax for declaration of matrices
 #include <FastLED.h>      // seems to need to be after the namespace 
+#include <EEPROM.h>
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
 
@@ -60,19 +61,31 @@ void setup() {
 
   commsBegin(id);
   commsSubscribe(settingsTopic, &settings, &settingsUpdate);
+  //  commsSubscribe(settingsTopic, &settings, settingsUpdate);
   for ( byte i = 0; i < N_ARCHES; i++ ) {
     commsSubscribe(distTopic[i], &dist[i], &distUpdate[i]);
     commsSubscribe(freqTopic[i], &freq[i], &freqUpdate[i]);
     Serial << F("Publishing: ") << lightsTopic[i] << endl;
   }
+  /*
+    commsSubscribe(distTopic[0], &dist[0], distUpdate0);
+    commsSubscribe(distTopic[1], &dist[1], distUpdate1);
+    commsSubscribe(distTopic[2], &dist[2], distUpdate2);
+    commsSubscribe(freqTopic[0], &freq[0], freqUpdate0);
+    commsSubscribe(freqTopic[1], &freq[1], freqUpdate1);
+    commsSubscribe(freqTopic[2], &freq[2], freqUpdate2);
 
+    for ( byte i = 0; i < N_ARCHES; i++ ) {
+      Serial << F("Publishing: ") << lightsTopic[i] << endl;
+    }
+  */
   Serial << F("Startup. complete.") << endl;
 }
 
 void mapDistanceToBar(byte index) {
   for ( byte i = 0; i < N_SENSOR; i++ ) {
     uint16_t intensity = map(
-                           dist[index].prox[i],
+                           dist[index].prox[i] > dist[index].noise ? dist[index].prox[i] : 0,
                            dist[index].min, dist[index].max,
                            (uint16_t)0, (uint16_t)255
                          );
@@ -80,6 +93,25 @@ void mapDistanceToBar(byte index) {
   }
 }
 
+/*
+  void distUpdate0() { distUpdate(0); }
+  void distUpdate1() { distUpdate(1); }
+  void distUpdate2() { distUpdate(2); }
+  void distUpdate(byte i) {
+  Serial << F("Dist update:") << i << endl;
+  // map to lights
+  mapDistanceToBar(i);
+  // ship it, but bail out if no connection
+  commsPublish(lightsTopic[i], &lights[i]);
+  }
+
+  void freqUpdate0() { freqUpdate(0); }
+  void freqUpdate1() { freqUpdate(1); }
+  void freqUpdate2() { freqUpdate(2); }
+  void freqUpdate(byte i) {
+  Serial << F("freqUpdate ") << i << endl;
+  }
+*/
 void loop() {
   // comms handling
   commsUpdate();
@@ -93,22 +125,16 @@ void loop() {
   if ( settingsUpdate ) {
     Serial << F("settingsUpdate.") << endl;
     settingsUpdate = false;
-    // return, so we get lots of commsUpdate's.
-   return;
   }
 
   // check for an update to distance
   for ( byte i = 0; i < N_ARCHES; i++ ) {
     if ( distUpdate[i] ) {
-      Serial << F("distUpdate ") << i << endl;
+      Serial << F("distUpdate ") << i << F(":") << millis() << endl;
       // map to lights
       mapDistanceToBar(i);
-      // ship it, but bail out if no connection
-      if ( commsConnected() ) commsPublish(lightsTopic[i], &lights[i]);
       // reset
       distUpdate[i] = false;
-      // return, so we get lots of commsUpdate's.
-      return;
     }
   }
 
@@ -118,31 +144,37 @@ void loop() {
       Serial << F("freqUpdate ") << i << endl;
       // reset
       freqUpdate[i] = false;
-      // return, so we get lots of commsUpdate's.
-      return;
     }
   }
 
   // simulate up and down, for now
-  EVERY_N_MILLISECONDS( 10 ) {
+  EVERY_N_MILLISECONDS( 25 ) {
     simulateUpDown();
   }
+
+  EVERY_N_MILLISECONDS( 25 ) {
+    // ship it, but bail out if no connection
+    for ( byte i = 0; i < N_ARCHES; i++ ) {
+      commsPublish(lightsTopic[i], &lights[i]);
+    }
+  }
+
 
 }
 
 // publishing this is the job of Sepal_Coordinator
 void simulateUpDown() {
-
+/*
   // adjust the bar
   static byte counter = 0;
   counter ++;
   for ( byte i = 0; i < N_ARCHES; i++ ) {
     CRGBSet bar(lights[i].bar, N_SENSOR);
-    
+
     bar.fadeToBlackBy(128);
     bar[counter % bar.size()] = CRGB::White;
   }
-
+*/
   // show a throbbing rainbow on the down segments
   static byte fadeBy = 0;
   static byte legHue = 0;
@@ -151,7 +183,7 @@ void simulateUpDown() {
   for ( byte i = 0; i < N_ARCHES; i++ ) {
     CRGBSet leftDown(lights[i].leftDown, N_LEDS_DOWN);
     CRGBSet rightDown(lights[i].rightDown, N_LEDS_DOWN);
-    
+
     leftDown.fill_rainbow(++legHue, legHueDelta); // paint
     leftDown.fadeToBlackBy(++fadeBy % 128);
     rightDown.fill_rainbow(legHue + 128, -legHueDelta); // paint, noting we're using the other side of the wheel
@@ -165,7 +197,7 @@ void simulateUpDown() {
   for ( byte i = 0; i < N_ARCHES; i++ ) {
     CRGBSet leftUp(lights[i].leftUp, N_LEDS_UP);
     CRGBSet rightUp(lights[i].rightUp, N_LEDS_UP);
-    
+
     leftUp.fadeToBlackBy(bpm);
     rightUp.fadeToBlackBy(bpm);
     // set the speed the pixel travels, see: lib8tion.h
@@ -177,11 +209,6 @@ void simulateUpDown() {
     leftUp[posVal] = CHSV(++hue, 255, 255);
     // mirrored direction and hue
     rightUp[endUp - posVal] = CHSV(hue + 128, 255, 255);
-  }
-
-  // ship it, but bail out if no connection
-  for ( byte i = 0; i < N_ARCHES; i++ ) {
-    if ( commsConnected() ) commsPublish(lightsTopic[i], &lights[i]);
   }
 
 }
@@ -206,7 +233,7 @@ void simulateUpDown() {
 // By: randomvibe
 //-----------------------------
 /*
-void print_mtx(const MatrixFreq & X) {
+  void print_mtx(const MatrixFreq & X) {
   int i, j, nrow, ncol;
 
   nrow = X.rows();
@@ -226,5 +253,5 @@ void print_mtx(const MatrixFreq & X) {
     Serial.println();
   }
   Serial.println();
-}
+  }
 */

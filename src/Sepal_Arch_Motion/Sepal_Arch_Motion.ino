@@ -29,10 +29,13 @@ const String freqTopic = commsTopicFreq(SepalNumber, archNumber);
 
 // ADC on ESP32
 // https://esp-idf.readthedocs.io/en/v2.0/api/peripherals/adc.html
-uint8_t adc[N_SENSOR] = {
-  A4, A5, A6, A7, A17, A16, A15, A14
-  // 32, 33, 34, 35, 27,  14,  13,  13   <-  labels on topside of board
+unsigned int adc[N_SENSOR] = {
+//   A4, A5, A6, A7, A17, A16, A15, A14
+   A4, A5, A6, A7, A4, A5, A6, A7
+// 32, 33, 34, 35, 27,   14,  12,  13   <-  labels on topside of board
 };
+// shit.  need to use ADC1 pins, as ADC2 conflicts with WiFi
+// ADC1: 32, 34-39
 
 // track cycle time
 unsigned long targetCycleTime = 20UL; // ms
@@ -59,10 +62,10 @@ boolean fillBuffer() {
 
   // read
   uint16_t reading = analogRead( adc[sensor] );
-
+  uint32_t smoothed = ((uint32_t)dist.prox[sensor] * ((uint32_t)smoothing - 1) + (uint32_t)reading) / (uint32_t)smoothing;
   // smooth
-  dist.prox[sensor] = (dist.prox[sensor] * (smoothing - 1) + reading) / smoothing;
-
+  dist.prox[sensor] = (uint16_t)smoothed;
+  
   // push to buffer
   buffer[sensor][index] = reading;
 
@@ -100,12 +103,6 @@ void setup() {
   // for local output
   Serial.begin(115200);
 
-  commsBegin(id);
-  commsSubscribe(settingsTopic, &settings, &settingsUpdate);
-  Serial << F("Publishing: ") << distTopic << endl;
-  Serial << F("Publishing: ") << freqTopic << endl;
-  commsUpdate();
-
   // configure ADC
   // C:\Program Files (x86)\Arduino\hardware\espressif\esp32\cores\esp32\esp32-hal-adc.h
   analogSetWidth(12); // sweet. 12-bit depth.
@@ -113,6 +110,13 @@ void setup() {
   analogSetCycles(8); // default=8
 
   targetCycleTime = cycleTime(settings.fps);
+
+  commsBegin(id);
+  commsSubscribe(settingsTopic, &settings, &settingsUpdate);
+//  commsSubscribe(settingsTopic, &settings, settingsUpdate);
+  Serial << F("Publishing: ") << distTopic << endl;
+  Serial << F("Publishing: ") << freqTopic << endl;
+  commsUpdate();
 
 }
 
@@ -135,11 +139,11 @@ void loop() {
   static uint32_t tic = millis();
   if ( fillBuffer() ) {
 
-    double secElapsed = (double)(millis() - tic)*1000.0;
+    double secElapsed = (double)(millis() - tic)/1000.0;
     freq.samplingFrequency = (double)N_FREQ_SAMPLES / secElapsed; // report the interval between two updates of the same sensor
     
-    Serial << _FLOAT(secElapsed,4) << " sec elapsed for one buffer fill.  samplingFrequency=" << _FLOAT(freq.samplingFrequency,4) << " Hz." << endl;
-
+//    Serial << _FLOAT(secElapsed,4) << " sec elapsed for one buffer fill.  samplingFrequency=" << _FLOAT(freq.samplingFrequency,4) << " Hz." << endl;
+/*
     // dump the buffer
     Serial << endl;
     dumpBuffer();
@@ -148,25 +152,30 @@ void loop() {
     // compute FFT
     computeFFT();
 
-    // ship it, but bail out if no connection
-    if ( commsConnected() ) commsPublish(freqTopic, &freq);
-
+    // ship it
+    commsPublish(freqTopic, &freq);
+*/
     tic = millis();
   }
-
+  
   // push distance information
   static Metro sendDistInterval(targetCycleTime);
   static uint16_t counts = 0; // counting the update cycles
   counts++;
   if ( sendDistInterval.check() ) {
-    // ship it, but bail out if no connection
-    if ( commsConnected() ) commsPublish(distTopic, &dist);
-
+    // ship it
+    commsPublish(distTopic, &dist);
+    
+    for( byte i=0; i<N_SENSOR; i++ ) Serial << dist.prox[i] << ",";
+    Serial << targetCycleTime;
+    Serial << endl;
+    
     sendDistInterval.interval(targetCycleTime);
     sendDistInterval.reset();
 
     // adjust smoothing to capture average reading over targetCycleTime
-    smoothing = counts/(uint16_t)N_SENSOR;
+//    smoothing = counts/(uint16_t)N_SENSOR;
+//    if( smoothing < 1 ) smoothing = 1;
     counts = 0;
   }
 }

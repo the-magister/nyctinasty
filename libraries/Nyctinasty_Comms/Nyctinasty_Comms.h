@@ -5,6 +5,7 @@
 
 #include <Streaming.h>
 #include <Metro.h>
+#include <EEPROM.h>
 
 #include "Nyctinasty_Messages.h"
 
@@ -18,6 +19,15 @@
 
 #include <PubSubClient.h>
 
+typedef struct {
+	char role[20]; // very important to NOT use String (doesn't have a defined length)
+	byte sepal={N_SEPALS};
+	byte arch={N_ARCHES};
+} Id;
+
+void getIdEEPROM(Id id);
+void putIdEEPROM(Id id);
+
 // call this very frequently
 void commsUpdate();
 
@@ -29,27 +39,33 @@ void connectWiFi(String ssid="GamesWithFire", String passwd="safetythird", unsig
 void connectMQTT(String broker="broker", word port=1883, unsigned long interval=500UL);
 void commsCallback(char* topic, byte* payload, unsigned int length);
 void commsSubscribe(String topic, void * msg, boolean * updateFlag);
+//void commsSubscribe(String topic, void * msg, void (*callBackFunction)());
 boolean commsPublish(String topic, uint8_t * msg, unsigned int msgBytes);
 void toggleLED();
 
 // build an MQTT id, which must be unique.
+String commsIdSepalArchMotion(byte sepalNumber, byte archNumber);
 String commsIdSepalCoordinator(byte sepalNumber);
 String commsIdSepalArchLight(byte sepalNumber, byte archNumber);
-String commsIdSepalArchMotion(byte sepalNumber, byte archNumber);
 
 // startup.  use unique id that's built by the commsId* helpers. 
 void commsBegin(String id, byte ledPin=BUILTIN_LED);
 
 // build a MQTT topic, for use with subscribe and publish routines.
+#define ALL
 String commsTopicSystemCommand();
-String commsTopicLight(byte sepalNumber, byte archNumber);
-String commsTopicDistance(byte sepalNumber, byte archNumber);
-String commsTopicFreq(byte sepalNumber, byte archNumber);
+String commsTopicLight(byte sepalNumber=N_SEPALS, byte archNumber=N_ARCHES);
+String commsTopicDistance(byte sepalNumber=N_SEPALS, byte archNumber=N_ARCHES);
+String commsTopicFreq(byte sepalNumber=N_SEPALS, byte archNumber=N_ARCHES);
 
 // subscribe to a topic, provide storage for the payload, provide a flag for update indicator
 template <class T>
 void commsSubscribe(String topic, T * msg, boolean * updateFlag) {
 	commsSubscribe(topic, (void *)msg, updateFlag);
+}
+template <class T>
+void commsSubscribe(String topic, T * msg, void (*callBackFunction)()) {
+	commsSubscribe(topic, (void *)msg, callBackFunction);
 }
 
 // publish to a topic
