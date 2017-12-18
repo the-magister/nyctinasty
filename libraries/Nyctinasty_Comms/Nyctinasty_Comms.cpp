@@ -13,6 +13,7 @@ byte nTopics = 0;
 String subTopic[maxTopics];
 void * subStorage[maxTopics];
 boolean * subUpdate[maxTopics];
+byte subQoS[maxTopics];
 //void (* subCallback[maxTopics])();
 
 
@@ -31,7 +32,7 @@ void putIdEEPROM(Id id) {
 
 /*
 Project:	nyc
-	Role: 		Coordinator, Motion, Light, Sound, Fx, UI
+	Role: 		Coordinator, Frequency, Light, Sound, Fx, UI
 		Sepal:		0-2
 			Arch:		0-2
 */
@@ -40,9 +41,9 @@ Project:	nyc
 const String project = "nyc";
 const String sep = "/";
 const String oneWild = "+";
-const String roles[] = {"Motion","Coordinator","Light","Sound","Fx","UI"};
+const String roles[] = {"Frequency","Coordinator","Light","Sound","Fx","UI"};
 
-String commsIdSepalArchMotion(byte sepalNumber, byte archNumber) {
+String commsIdSepalArchFrequency(byte sepalNumber, byte archNumber) {
 	return( 
 		project + sep + 
 			roles[0] + sep + 
@@ -94,7 +95,7 @@ String commsTopicDistance(byte sepalNumber, byte archNumber) {
 	);
 
 }
-String commsTopicFreq(byte sepalNumber, byte archNumber) {
+String commsTopicFrequency(byte sepalNumber, byte archNumber) {
 	return( 
 		project + sep + 
 			messages[3] + sep + 
@@ -127,7 +128,32 @@ void commsBegin(String id, byte ledPin) {
 
 	myLED = ledPin;
 	pinMode(myLED, OUTPUT);
+	
+	// enable OTA pull programming.  reboots after a new payload.
+	ESPhttpUpdate.rebootOnUpdate(true);
 
+	// enable OTA push programming, too.
+	ArduinoOTA.setHostname(myID.c_str());
+	ArduinoOTA.onStart([]() {
+		Serial.println("Start");
+	});
+	ArduinoOTA.onEnd([]() {
+		Serial.println("\nEnd");
+	});
+	ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+		Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+	});
+	ArduinoOTA.onError([](ota_error_t error) {
+		Serial.printf("Error[%u]: ", error);
+		if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+		else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+		else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+		else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+		else if (error == OTA_END_ERROR) Serial.println("End Failed");
+	});
+
+	ArduinoOTA.begin();
+	
 }
 
 void toggleLED() {
@@ -147,6 +173,7 @@ void commsUpdate() {
 		connectMQTT();
 	} else {
 		mqtt.loop(); // look for a message
+		ArduinoOTA.handle(); // see if we need to reprogram
 	}
 }
 
@@ -173,7 +200,7 @@ void commsCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 // subscribe to a topic
-void commsSubscribe(String topic, void * storage, boolean * updateFlag) {
+void commsSubscribe(String topic, void * storage, boolean * updateFlag, uint8_t QoS) {
 	// check to see if we've execeed the buffer size
 	if( nTopics >= maxTopics ) {
 		Serial << F("Increase Nyctinasty_Comms.cpp maxTopics!!!  Halting.") << endl;
@@ -183,6 +210,7 @@ void commsSubscribe(String topic, void * storage, boolean * updateFlag) {
 	subTopic[nTopics] = topic;
 	subStorage[nTopics] = storage;
 	subUpdate[nTopics] = updateFlag; 
+	subQoS[nTopics] = QoS;
 	nTopics++;
 }
 /*
@@ -204,7 +232,8 @@ void commsSubscribe(String topic, void * storage, void (*callBackFunction)()) {
 boolean commsPublish(String topic, uint8_t * msg, unsigned int msgBytes) {
 	// bit of an edge case, but let's check
 	if( msgBytes >= MQTT_MAX_PACKET_SIZE ) {
-		Serial << F("Increase PubSubClient.h MQTT_MAX_PACKET_SIZE!!!  Halting.") << endl;
+		Serial << F("Increase PubSubClient.h MQTT_MAX_PACKET_SIZE >") << msgBytes << endl;;
+		Serial << F("!!!  Halting.") << endl;
 		while(1) yield();
 	}
 	// bail out if we're not connected
@@ -244,9 +273,10 @@ void connectMQTT(String broker, word port, unsigned long interval) {
 			// (re)subscribe
 			for(byte i=0; i<nTopics; i++) {
 				Serial << F("Subscribing: ") << subTopic[i];
+				Serial << F(" QoS=") << subQoS[i];
 				mqtt.loop(); // in case messages are in.
-				boolean ret = mqtt.subscribe(subTopic[i].c_str());
-				Serial << F(" res=") << ret << endl;
+				boolean ret = mqtt.subscribe(subTopic[i].c_str(), subQoS[i]);
+				Serial << F(". OK? ") << ret << endl;
 			}
 
 		} else {
@@ -262,3 +292,34 @@ void connectMQTT(String broker, word port, unsigned long interval) {
 	}
 }
 
+// reboot
+void reboot() {
+	Serial << endl << F("*** REBOOTING ***") << endl;
+	delay(100);
+	ESP.restart();
+}
+
+// reprogram
+void reprogram(String binaryName) {
+	String updateURL = "http://http://192.168.1.1:80/binaries/" + binaryName;
+	Serial << endl << F("*** RELOADING ***") << endl;
+	Serial << F("Getting payload from: ") << updateURL << endl;
+
+	delay(random(100, 1000)); // so we all don't hit the server at the same time.
+
+	t_httpUpdate_return ret = ESPhttpUpdate.update(updateURL.c_str());
+
+	switch (ret) {
+		case HTTP_UPDATE_FAILED:
+		Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+		break;
+
+		case HTTP_UPDATE_NO_UPDATES:
+		Serial.println("HTTP_UPDATE_NO_UPDATES");
+		break;
+
+		case HTTP_UPDATE_OK:
+		Serial.println("HTTP_UPDATE_OK");
+		break;
+	}
+}

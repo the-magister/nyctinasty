@@ -7,8 +7,19 @@
 using namespace Eigen;    // simplifies syntax for declaration of matrices
 #include <FastLED.h>      // seems to need to be after the namespace 
 #include <EEPROM.h>
+#include <FiniteStateMachine.h>
+#include <ESP8266httpUpdate.h>
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
+
+
+// define a state for every systemState
+void startupUpdate(); State Startup = State(startupUpdate); 
+void normalUpdate(); State Normal = State(normalUpdate);
+void idleUpdate(); State Idle = State(idleUpdate);
+State Reboot = State(reboot);
+void reprogram() { reprogram("Sepal_Coordinator.ino.bin"); } State Reprogram = State(reprogram);
+FSM stateMachine = FSM(Startup); //initialize state machine
 
 // who am I?
 const byte SepalNumber = 0;
@@ -20,26 +31,6 @@ SystemCommand settings;
 const String settingsTopic = commsTopicSystemCommand();
 // and sets this true when an update arrives
 boolean settingsUpdate = false;
-
-// our led updates send as this structure
-SepalArchLight lights[N_ARCHES];
-// in these topics
-const String lightsTopic[N_ARCHES] = {
-  commsTopicLight(SepalNumber, 0),
-  commsTopicLight(SepalNumber, 1),
-  commsTopicLight(SepalNumber, 2)
-};
-
-// our distance updates arrive as this structure
-SepalArchDistance dist[N_ARCHES];
-// in these topics
-const String distTopic[N_ARCHES] = {
-  commsTopicDistance(SepalNumber, 0),
-  commsTopicDistance(SepalNumber, 1),
-  commsTopicDistance(SepalNumber, 2)
-};
-// and sets this true when an update arrives
-boolean distUpdate[N_ARCHES] = {false};
 
 // our distance updates arrive as this structure
 SepalArchFreq freq[N_ARCHES];
@@ -60,36 +51,75 @@ void setup() {
   delay(500);
 
   commsBegin(id);
-  commsSubscribe(settingsTopic, &settings, &settingsUpdate);
+  commsSubscribe(settingsTopic, &settings, &settingsUpdate, 1); // QoS 1
   //  commsSubscribe(settingsTopic, &settings, settingsUpdate);
   for ( byte i = 0; i < N_ARCHES; i++ ) {
-    commsSubscribe(distTopic[i], &dist[i], &distUpdate[i]);
     commsSubscribe(freqTopic[i], &freq[i], &freqUpdate[i]);
-    Serial << F("Publishing: ") << lightsTopic[i] << endl;
   }
-  /*
-    commsSubscribe(distTopic[0], &dist[0], distUpdate0);
-    commsSubscribe(distTopic[1], &dist[1], distUpdate1);
-    commsSubscribe(distTopic[2], &dist[2], distUpdate2);
-    commsSubscribe(freqTopic[0], &freq[0], freqUpdate0);
-    commsSubscribe(freqTopic[1], &freq[1], freqUpdate1);
-    commsSubscribe(freqTopic[2], &freq[2], freqUpdate2);
-
-    for ( byte i = 0; i < N_ARCHES; i++ ) {
-      Serial << F("Publishing: ") << lightsTopic[i] << endl;
-    }
-  */
+ 
   Serial << F("Startup. complete.") << endl;
 }
 
-void mapDistanceToBar(byte index) {
-  for ( byte i = 0; i < N_SENSOR; i++ ) {
-    uint16_t intensity = map(
-                           dist[index].prox[i] > dist[index].noise ? dist[index].prox[i] : 0,
-                           dist[index].min, dist[index].max,
-                           (uint16_t)0, (uint16_t)255
-                         );
-    lights[index].bar[i] = CHSV(HUE_BLUE, 0, (byte)intensity);
+void loop() {
+  // comms handling
+  commsUpdate();
+
+  // bail out if not connected
+  if ( ! commsConnected() ) return;
+
+  // order these by priority:
+
+  // check for settings update
+  if ( settingsUpdate ) {
+    switchState(settings.state);
+    settingsUpdate = false;
+  }
+
+  // do stuff
+  stateMachine.update();
+}
+
+
+void switchState(systemState state) {
+  Serial << F("State.  Changing to ") << state << endl;
+  switch ( state ) {
+    case STARTUP: stateMachine.transitionTo(Startup); break;
+    case NORMAL: stateMachine.transitionTo(Normal); break;
+    case CENTRAL: stateMachine.transitionTo(Idle); break;
+    case REBOOT: stateMachine.transitionTo(Reboot); break;
+    case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
+    default:
+      Serial << F("ERROR!  unknown state.") << endl;
+  }
+}
+
+void startupUpdate() {
+  // As a Coordinator, we're responsible for sending a NORMAL systemState after startup
+  Metro startupDelay(1000UL);
+  while( !startupDelay.check() ) {
+    commsUpdate();
+    yield();
+  }
+   
+  settings.state = NORMAL;
+  commsPublish(settingsTopic, &settings); 
+
+  // go to central update while we wait for our subscription to arrive
+  stateMachine.transitionTo(Idle);
+}
+
+void idleUpdate() {
+  // NOP; on hold until we hear from the Coordinator
+}
+
+void normalUpdate() {
+  // check for an update to frequency
+  for ( byte i = 0; i < N_ARCHES; i++ ) {
+    if ( freqUpdate[i] ) {
+      Serial << F("freqUpdate ") << i << endl;
+      // reset
+      freqUpdate[i] = false;
+    }
   }
 }
 
@@ -112,107 +142,6 @@ void mapDistanceToBar(byte index) {
   Serial << F("freqUpdate ") << i << endl;
   }
 */
-void loop() {
-  // comms handling
-  commsUpdate();
-
-  // bail out if not connected
-  if ( ! commsConnected() ) return;
-
-  // order these by priority:
-
-  // check for settings update
-  if ( settingsUpdate ) {
-    Serial << F("settingsUpdate.") << endl;
-    settingsUpdate = false;
-  }
-
-  // check for an update to distance
-  for ( byte i = 0; i < N_ARCHES; i++ ) {
-    if ( distUpdate[i] ) {
-      Serial << F("distUpdate ") << i << F(":") << millis() << endl;
-      // map to lights
-      mapDistanceToBar(i);
-      // reset
-      distUpdate[i] = false;
-    }
-  }
-
-  // check for an update to frequency
-  for ( byte i = 0; i < N_ARCHES; i++ ) {
-    if ( freqUpdate[i] ) {
-      Serial << F("freqUpdate ") << i << endl;
-      // reset
-      freqUpdate[i] = false;
-    }
-  }
-
-  // simulate up and down, for now
-  EVERY_N_MILLISECONDS( 25 ) {
-    simulateUpDown();
-  }
-
-  EVERY_N_MILLISECONDS( 25 ) {
-    // ship it, but bail out if no connection
-    for ( byte i = 0; i < N_ARCHES; i++ ) {
-      commsPublish(lightsTopic[i], &lights[i]);
-    }
-  }
-
-
-}
-
-// publishing this is the job of Sepal_Coordinator
-void simulateUpDown() {
-/*
-  // adjust the bar
-  static byte counter = 0;
-  counter ++;
-  for ( byte i = 0; i < N_ARCHES; i++ ) {
-    CRGBSet bar(lights[i].bar, N_SENSOR);
-
-    bar.fadeToBlackBy(128);
-    bar[counter % bar.size()] = CRGB::White;
-  }
-*/
-  // show a throbbing rainbow on the down segments
-  static byte fadeBy = 0;
-  static byte legHue = 0;
-  static int legHueDelta = 255 / 8;
-  static byte legBrightness = 32;
-  for ( byte i = 0; i < N_ARCHES; i++ ) {
-    CRGBSet leftDown(lights[i].leftDown, N_LEDS_DOWN);
-    CRGBSet rightDown(lights[i].rightDown, N_LEDS_DOWN);
-
-    leftDown.fill_rainbow(++legHue, legHueDelta); // paint
-    leftDown.fadeToBlackBy(++fadeBy % 128);
-    rightDown.fill_rainbow(legHue + 128, -legHueDelta); // paint, noting we're using the other side of the wheel
-    rightDown.fadeToBlackBy((fadeBy + 128) % 128);
-  }
-
-  // trails
-  // bpm (rate of dot travel) changes with time
-  const byte bpm = 16; // 1/minute
-  // fade everything
-  for ( byte i = 0; i < N_ARCHES; i++ ) {
-    CRGBSet leftUp(lights[i].leftUp, N_LEDS_UP);
-    CRGBSet rightUp(lights[i].rightUp, N_LEDS_UP);
-
-    leftUp.fadeToBlackBy(bpm);
-    rightUp.fadeToBlackBy(bpm);
-    // set the speed the pixel travels, see: lib8tion.h
-    const uint16_t endUp = rightUp.size() - 1;
-    uint16_t posVal = beatsin16(bpm, 0, (uint16_t)endUp);
-    // cycle through hues
-    static byte hue = 0;
-    // paint
-    leftUp[posVal] = CHSV(++hue, 255, 255);
-    // mirrored direction and hue
-    rightUp[endUp - posVal] = CHSV(hue + 128, 255, 255);
-  }
-
-}
-
 
 // MatrixMath library
 // https://playground.arduino.cc/Code/MatrixMath

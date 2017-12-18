@@ -14,3 +14,5 @@ opkg update
 opkg install luci
 opkg install mosquitto-client-nossl
 opkg install mosquitto-nossl
+
+need to add mdnsresponder, too.
