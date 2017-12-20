@@ -3,6 +3,7 @@
 #include <Streaming.h>
 // pin order
 #define FASTLED_ESP8266_RAW_PIN_ORDER
+// will toss packets while updating lights.
 #define FASTLED_ALLOW_INTERRUPTS 0
 //#define FASTLED_INTERRUPT_RETRY_COUNT 1
 // with retries on strip updates
@@ -25,7 +26,7 @@ FSM stateMachine = FSM(Idle); //initialize state machine
 const byte sepalNumber = 0;
 const byte archNumber = 0;
 const String id = commsIdSepalArchLight(sepalNumber, archNumber);
-const byte archHue = 256/N_ARCHES * archNumber;
+const byte archHue = (256/N_ARCHES) * archNumber;
 const byte archSat = 128;
 
 // ship settings
@@ -62,6 +63,12 @@ CRGBSet ledsLeftDown(&leds[0 * LEDS_PER_PIN], LEDS_PER_PIN);
 CRGBSet ledsLeftUp(&leds[1 * LEDS_PER_PIN], LEDS_PER_PIN);
 CRGBSet ledsRightDown(&leds[2 * LEDS_PER_PIN], LEDS_PER_PIN);
 CRGBSet ledsRightUp(&leds[3 * LEDS_PER_PIN], LEDS_PER_PIN);
+
+// ease accessing portions of the hardware
+CRGBSet leftDown(&ledsLeftDown[N_SENSOR / 2], N_LEDS);
+CRGBSet leftUp(&ledsLeftUp[N_SENSOR / 2], N_LEDS);
+CRGBSet rightDown(&ledsRightDown[N_SENSOR / 2], N_LEDS);
+CRGBSet rightUp(&ledsRightUp[N_SENSOR / 2], N_LEDS);
 
 #define COLOR_ORDER RGB
 #define COLOR_CORRECTION TypicalLEDStrip
@@ -127,11 +134,6 @@ void switchState(systemState state) {
 void idleUpdate() {
   static byte hue = 0;
 
-  static CRGBSet leftDown(&ledsLeftDown[N_SENSOR / 2], N_LEDS);
-  static CRGBSet leftUp(&ledsLeftUp[N_SENSOR / 2], N_LEDS);
-  static CRGBSet rightDown(&ledsRightDown[N_SENSOR / 2], N_LEDS);
-  static CRGBSet rightUp(&ledsRightUp[N_SENSOR / 2], N_LEDS);
-
   EVERY_N_MILLISECONDS(20) {
     // show a throbbing rainbow on the legs
     hue++;
@@ -179,12 +181,9 @@ void mapFreqToLegs() {
   // frequency power
   uint16_t power[N_SENSOR][N_FREQ_BINS] = {{0.0}};
 
-  static CRGBSet leftDown(&ledsLeftDown[N_SENSOR / 2], N_LEDS);
-  static CRGBSet rightDown(&ledsRightDown[N_SENSOR / 2], N_LEDS);
-
+  // do the boneheaded thing and sum up the bins across all sensors
   uint32_t sumSensors[N_FREQ_BINS] = {0};
   uint32_t maxSum = 0;
-
   for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
     for ( byte i = 0; i < N_SENSOR; i++ ) {
       sumSensors[j] += freq.power[i][j];
@@ -192,13 +191,15 @@ void mapFreqToLegs() {
     if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
   }
 
+  Serial << F("Freq bins: ");
+  // set the LEDs proportional to bins, normalized to maximum bin
   for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
     uint32_t value = map( sumSensors[j],
                           (uint32_t)0, maxSum,
                           (uint32_t)0, (uint32_t)255
                         );
     Serial << value << ",";
-    leftDown[j % N_LEDS] = CHSV(archHue, archSat, constrain(value, 0, 255));
+    leftDown[j % N_LEDS] = CHSV(archHue, archSat, brighten8_video(constrain(value, 0, 255)));
   }
   Serial << endl;
   rightDown = leftDown;
@@ -226,37 +227,6 @@ void mapDistanceToBar() {
   ledsRightUp(0, halfBar) = ledsRightDown(0, halfBar);
 
 }
-
-/*
-  void applyToHardware() {
-  // arch bar update
-  CRGBSet bar(lights.bar, N_SENSOR);
-  const uint16_t halfBar = bar.size() / 2 - 1;
-  const uint16_t fullBar = bar.size() - 1;
-  ledsLeftDown(halfBar, 0) = bar(0, halfBar);
-  ledsRightDown(0, halfBar) = bar(halfBar + 1, fullBar);
-  // mirror bar
-  ledsLeftUp(0, halfBar) = ledsLeftDown(0, halfBar);
-  ledsRightUp(0, halfBar) = ledsRightDown(0, halfBar);
-
-  // down lights update
-  CRGBSet leftDown(lights.leftDown, N_LEDS);
-  CRGBSet rightDown(lights.rightDown, N_LEDS);
-  const uint16_t startDown = halfBar + 1;
-  const uint16_t endDown = ledsLeftDown.size() - 1;
-  ledsLeftDown(startDown, endDown) = leftDown;
-  ledsRightDown(startDown, endDown) = rightDown;
-
-  // up lights update
-  CRGBSet leftUp(lights.leftUp, N_LEDS);
-  CRGBSet rightUp(lights.rightUp, N_LEDS);
-  const uint16_t startUp = halfBar + 1;
-  const uint16_t endUp = ledsLeftUp.size() - 1;
-  ledsLeftUp(startUp, endUp) = leftUp;
-  ledsRightUp(startUp, endUp) = rightUp;
-
-  }
-*/
 
 void pushToHardware() {
   FastLED.show();

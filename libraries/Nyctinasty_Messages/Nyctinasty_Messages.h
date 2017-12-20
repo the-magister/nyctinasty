@@ -37,7 +37,7 @@ typedef struct {
 
 // distance sensors on the Sepal arches
 #define N_SENSOR 8
-const uint32_t distanceSampleRate = 10; // ms, 50 Hz
+const uint32_t distanceSampleRate = 20; // ms
 typedef struct {
 	// track provenance
 	byte sepal, arch;

@@ -15,7 +15,7 @@ void normalUpdate(); State Normal = State(normalUpdate);
 State Reboot = State(reboot);
 void reprogram() {
   reprogram("Sepal_Arch_Frequency.ino.bin");
-} State Reprogram = State(reprogram);
+}; State Reprogram = State(reprogram);
 FSM stateMachine = FSM(Idle); //initialize state machine
 
 // who am I?
@@ -38,11 +38,13 @@ const String distTopic = commsTopicDistance(sepalNumber, archNumber);
 // our frequency updates send as this structure
 SepalArchFreq freq;
 // in this topic
-const String freqTopic = commsTopicFreq(sepalNumber, archNumber);
+const String freqTopic = commsTopicFrequency(sepalNumber, archNumber);
 
 // FFT object
-#define N_FREQ_SAMPLES (uint16_t)(1<<8)  // This value MUST ALWAYS be a power of 2
-double buffer[N_SENSOR][N_FREQ_SAMPLES];
+//#define N_FREQ_SAMPLES (uint16_t)(1<<8)  // This value MUST ALWAYS be a power of 2
+#define N_FREQ_SAMPLES (uint16_t)(1<<7)  // This value MUST ALWAYS be a power of 2
+uint16_t buffer[N_SENSOR][N_FREQ_SAMPLES];
+boolean bufferReady = false;
 arduinoFFT FFT = arduinoFFT();
 
 // for comms
@@ -108,6 +110,14 @@ void idleUpdate() {
   // NOP; on hold until we hear from the Coordinator
 }
 void normalUpdate() {
+  /*
+     Interleave a FFT compute and publishing between distance updates every 10 ms.
+     looks like:
+     distance -> fft(sensor 0) -> distance -> fft(sensor 1) etc. then
+     distance -> publish FFT
+     distance -> distance etc.
+  */
+
   // read ADCs
   if ( ETin.receiveData() ) {
     // ship it
@@ -116,27 +126,38 @@ void normalUpdate() {
     commsPublish(distTopic, &dist);
 
     // fill buffer
-    if ( fillBuffer() ) {
-      // dump the buffer
-      //        Serial << endl;
-      //        dumpBuffer();
-      //        Serial << endl;
+    fillBuffer();
 
-      // compute FFT
-      computeFFT();
+    // do FFT in segements.
+    static byte fftIndex = 0;
+    static boolean publishReady = false;
+    if ( bufferReady ) {
+      // compute
+      computeFFT(fftIndex);
 
-      // dump the average power for each sensor
-      dumpFFT();
+      // next sensor
+      fftIndex++;
 
-      // ship it
+      // are we done?
+      if ( fftIndex >= N_SENSOR ) {
+        fftIndex = 0;
+        bufferReady = false;
+        publishReady = true;
+      }
+    } else if ( publishReady ) {
+      // noting that we don't publish on the same loop as a compute
+      publishReady = false;
+      // publish
+      freq.sepal = sepalNumber;
+      freq.arch = archNumber;
       commsPublish(freqTopic, &freq);
     }
-  }
 
+  }
 }
 
 // storage
-boolean fillBuffer() {
+void fillBuffer() {
   // track the buffer index
   static uint16_t index = 0;
 
@@ -148,10 +169,8 @@ boolean fillBuffer() {
 
   if ( index >= N_FREQ_SAMPLES ) {
     index = 0;
-    return ( true );
+    bufferReady = true;
   }
-
-  return ( false );
 }
 
 // show sensor readings
@@ -194,38 +213,44 @@ void dumpFFT() {
   interpret bins beyond the first half in the FFT output as they won't represent real frequency
   values!
 */
-
-
-void computeFFT() {
+double imag[N_FREQ_SAMPLES];
+double real[N_FREQ_SAMPLES];
+void computeFFT(byte index) {
+  // track time
+  unsigned long tic = millis();
 
   // crunch the buffer; expensive
   const uint8_t exponent = FFT.Exponent(N_FREQ_SAMPLES); // can precompute to save a little time.
 
-  for ( byte i = 0; i < N_SENSOR; i++ ) {
+  // storage.  fft computations alter the buffer, so we copy
+  for ( uint16_t j = 0; j < N_FREQ_SAMPLES ; j++ ) {
+    real[j] = (double)buffer[index][j];
+    imag[j] = 0.0;
+  }
 
-    // storage for imaginary portion.
-    double imag[N_FREQ_SAMPLES] = {0.0};
+  // weigh data
+  FFT.Windowing(real, N_FREQ_SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);  /* Weigh data */
+  //    Serial.println("Weighed data:"); PrintVector(buffer[i], samples, SCL_TIME);
+  
+  // compute FFT
+  FFT.Compute(real, imag, N_FREQ_SAMPLES, exponent, FFT_FORWARD); /* Compute FFT */
+  //    Serial.println("Computed Real values:"); PrintVector(buffer[i], samples, SCL_INDEX);
+  //    Serial.println("Computed Imaginary values:"); PrintVector(vImag[i], samples, SCL_INDEX);
 
-    // show buffer
-    //    Serial.println("Data:"); PrintVector(vReal[i], samples, SCL_TIME);
+  // compute magnitudes
+  //    FFT.ComplexToMagnitude(buffer[i], imag, N_FREQ_SAMPLES); /* Compute magnitudes */
+  FFT.ComplexToMagnitude(real, imag, N_FREQ_BINS + 2); /* Compute magnitudes */
+  //    Serial.println("Computed magnitudes:");  PrintVector(buffer[i], (samples >> 1), SCL_FREQUENCY);
 
-    // weigh data
-    FFT.Windowing(buffer[i], N_FREQ_SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);  /* Weigh data */
-    //    Serial.println("Weighed data:"); PrintVector(buffer[i], samples, SCL_TIME);
+  // store power magnitudes of the lowest N_FREQ_BINS in the spectra
+  freq.avgPower[index] = (uint16_t)real[0];
+  for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) freq.power[index][j] = (uint16_t)real[j + 1];
 
-    // compute FFT
-    FFT.Compute(buffer[i], imag, N_FREQ_SAMPLES, exponent, FFT_FORWARD); /* Compute FFT */
-    //    Serial.println("Computed Real values:"); PrintVector(buffer[i], samples, SCL_INDEX);
-    //    Serial.println("Computed Imaginary values:"); PrintVector(vImag[i], samples, SCL_INDEX);
-
-    // compute magnitudes
-    //    FFT.ComplexToMagnitude(buffer[i], imag, N_FREQ_SAMPLES); /* Compute magnitudes */
-    FFT.ComplexToMagnitude(buffer[i], imag, N_FREQ_BINS+2); /* Compute magnitudes */
-    //    Serial.println("Computed magnitudes:");  PrintVector(buffer[i], (samples >> 1), SCL_FREQUENCY);
-
-    // store power magnitudes
-    freq.avgPower[i] = (uint16_t)buffer[i][0];
-    for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) freq.power[i][j] = (uint16_t)buffer[i][j + 1];
+  unsigned long toc = millis();
+  if( index == 0 ) {
+    Serial << F("FFT complete.  duration=") << toc - tic; 
+    Serial << F(" ms.  receiving samples every=") << distanceSampleRate;
+    Serial << F(" ms.") << endl; 
   }
 }
 
