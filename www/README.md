@@ -1,0 +1,1 @@
+Copy of /opt/www on the router.  images/ contains pre-compiled binaries for each uC type, and we can trigger a reload across the entire network as the build changes.  Very important, since we have 20+ uCs to manage!
