@@ -4,9 +4,10 @@ WiFiClient espClient;
 PubSubClient mqtt;
 
 // save
-String myID;
+String myID, otaID;
 byte myLED;
 boolean ledState = false;
+boolean ledOnState = false;
 
 const byte maxTopics = 32;
 byte nTopics = 0;
@@ -67,7 +68,12 @@ String commsIdSepalArchLight(byte sepalNumber, byte archNumber) {
 					String(archNumber,10)
 	);
 }
-
+String commsIdFlowerSimonBridge() {
+	return( 
+		project + sep + 
+			roles[4]
+	);
+}
 // subscription topics
 const String messages[] = {"Settings","Light","Dist","Freq"};
 
@@ -123,17 +129,22 @@ void commsBegin(String id, byte ledPin) {
 #endif 
 
 	myID = id;
+	otaID = id;
+	otaID.replace("/","-");
+	
 	mqtt.setClient(espClient);
 	mqtt.setCallback(commsCallback);
 
 	myLED = ledPin;
 	pinMode(myLED, OUTPUT);
-	
+	toggleLED();
+	setOffLED();
+
 	// enable OTA pull programming.  reboots after a new payload.
 	ESPhttpUpdate.rebootOnUpdate(true);
 
 	// enable OTA push programming, too.
-	ArduinoOTA.setHostname(myID.c_str());
+	ArduinoOTA.setHostname(otaID.c_str());
 	ArduinoOTA.onStart([]() {
 		Serial.println("Start");
 	});
@@ -151,11 +162,15 @@ void commsBegin(String id, byte ledPin) {
 		else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
 		else if (error == OTA_END_ERROR) Serial.println("End Failed");
 	});
-
-	ArduinoOTA.begin();
 	
 }
 
+void setOnLED() {
+	if( ledState!=ledOnState ) toggleLED();
+}
+void setOffLED() {
+	if( ledState==ledOnState ) toggleLED();
+}
 void toggleLED() {
 	// toggle the LED when we process a message
 	ledState = !ledState;
@@ -247,27 +262,45 @@ boolean commsPublish(String topic, uint8_t * msg, unsigned int msgBytes) {
 // connect to the WiFi
 void connectWiFi(String ssid, String passwd, unsigned long interval) {
 	static Metro connectInterval(interval);
+	static byte retryCount = 0;
+	
 	if ( connectInterval.check() ) {
-
+		retryCount++;
+		
 		Serial << F("WiFi status=") << WiFi.status();
 		Serial << F("\tAttempting WiFi connection to ") << ssid << F(" password ") << passwd << endl;
 		// Attempt to connect
 		WiFi.begin(ssid.c_str(), passwd.c_str());
-
+		
 		connectInterval.reset();
 	}
+	
+	if( retryCount >= 10 ) reboot();
 }
 
 // connect to MQTT broker
 void connectMQTT(String broker, word port, unsigned long interval) {
 	static Metro connectInterval(interval);
+	static byte retryCount = 0;
+
 	if ( connectInterval.check() ) {
 
-		Serial << F("Attempting MQTT connection as ") << myID << " to " << broker << ":" << port << endl;
+		retryCount++;
+
+		if ( MDNS.begin ( otaID.c_str() ) ) {
+			Serial << F("mDNS responder started: ") << otaID << endl;
+		} else {
+			Serial << F("Could NOT start MDNS!") << endl;
+		}
+		
+		Serial << F("OTA started: ") << otaID << endl;
+		ArduinoOTA.begin();
+		
+		Serial << F("Attempting MQTT connection as ") << otaID << " to " << broker << ":" << port << endl;
 		mqtt.setServer(broker.c_str(), port);
 
 		// Attempt to connect
-		if (mqtt.connect(myID.c_str())) {
+		if (mqtt.connect(otaID.c_str())) {
 			Serial << F("Connected.") << endl;
 
 			// (re)subscribe
@@ -290,10 +323,14 @@ void connectMQTT(String broker, word port, unsigned long interval) {
 
 		connectInterval.reset();
 	}
+
+	if( retryCount >= 10 ) reboot();
 }
 
 // reboot
 void reboot() {
+	setOnLED();
+
 	Serial << endl << F("*** REBOOTING ***") << endl;
 	delay(100);
 	ESP.restart();
@@ -301,7 +338,9 @@ void reboot() {
 
 // reprogram
 void reprogram(String binaryName) {
-	String updateURL = "http://http://192.168.1.1:80/binaries/" + binaryName;
+	setOnLED();
+	
+	String updateURL = "http://192.168.4.1:80/images/" + binaryName;
 	Serial << endl << F("*** RELOADING ***") << endl;
 	Serial << F("Getting payload from: ") << updateURL << endl;
 
@@ -311,7 +350,7 @@ void reprogram(String binaryName) {
 
 	switch (ret) {
 		case HTTP_UPDATE_FAILED:
-		Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+		Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\n", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
 		break;
 
 		case HTTP_UPDATE_NO_UPDATES:

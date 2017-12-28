@@ -13,8 +13,9 @@
 * REPROGRAM: triggers each microcontroller to contact the webserver to pull a new binary via OTA programming.
 */
 enum systemState {
+// note: starting at '48' implies that a plain text "0" will be interpreted as the zeroith element.
 //state				default	subscriptions	publications	
-  STARTUP=0,	//	yes		ANY				NONE
+  STARTUP=48,	//	yes		ANY				NONE
   NORMAL,		//	no		ANY				ANY
   CENTRAL,		//	no		ANY				Coordinator
   

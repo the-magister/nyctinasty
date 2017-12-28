@@ -1,3 +1,4 @@
+// #define DEBUG_HTTP_UPDATE Serial.printf
 // Compile for Wemos D1 R2 & Mini
 // keep an windward eye on dynamic memory usage: may need to go up to an ESP32
 #include <Metro.h>
@@ -11,7 +12,6 @@ using namespace Eigen;    // simplifies syntax for declaration of matrices
 #include <ESP8266httpUpdate.h>
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
-
 
 // define a state for every systemState
 void startupUpdate(); State Startup = State(startupUpdate); 
@@ -36,9 +36,9 @@ boolean settingsUpdate = false;
 SepalArchFreq freq[N_ARCHES];
 // in these topics
 const String freqTopic[N_ARCHES] = {
-  commsTopicFreq(SepalNumber, 0),
-  commsTopicFreq(SepalNumber, 1),
-  commsTopicFreq(SepalNumber, 2)
+  commsTopicFrequency(SepalNumber, 0),
+  commsTopicFrequency(SepalNumber, 1),
+  commsTopicFrequency(SepalNumber, 2)
 };
 // and sets this true when an update arrives
 boolean freqUpdate[N_ARCHES] = {false};
@@ -46,7 +46,8 @@ boolean freqUpdate[N_ARCHES] = {false};
 // This function sets up the ledsand tells the controller about them
 void setup() {
   Serial.begin(115200);
-
+  Serial.setDebugOutput(true);
+  
   Serial << endl << endl << F("Startup.") << endl;
   delay(500);
 
@@ -95,12 +96,12 @@ void switchState(systemState state) {
 
 void startupUpdate() {
   // As a Coordinator, we're responsible for sending a NORMAL systemState after startup
-  Metro startupDelay(1000UL);
-  while( !startupDelay.check() ) {
-    commsUpdate();
-    yield();
-  }
-   
+  uint32_t startupDelay = 10000UL;
+  static uint32_t tic = millis();
+  if( millis() < (tic+startupDelay) ) return;
+ 
+  Serial << F("State.  Sending NORMAL...") << endl;
+  
   settings.state = NORMAL;
   commsPublish(settingsTopic, &settings); 
 

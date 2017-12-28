@@ -41,17 +41,20 @@ boolean commsConnected();
 
 // don't need to mess with these
 void connectWiFi(String ssid="GamesWithFire", String passwd="safetythird", unsigned long interval=5000UL);
-void connectMQTT(String broker="broker", word port=1883, unsigned long interval=500UL);
+void connectMQTT(String broker="192.168.4.1", word port=1883, unsigned long interval=500UL);
 void commsCallback(char* topic, byte* payload, unsigned int length);
 void commsSubscribe(String topic, void * msg, boolean * updateFlag, uint8_t QoS);
 //void commsSubscribe(String topic, void * msg, void (*callBackFunction)());
 boolean commsPublish(String topic, uint8_t * msg, unsigned int msgBytes);
+void setOnLED();
+void setOffLED();
 void toggleLED();
 
 // build an MQTT id, which must be unique.
 String commsIdSepalArchFrequency(byte sepalNumber, byte archNumber);
 String commsIdSepalCoordinator(byte sepalNumber);
 String commsIdSepalArchLight(byte sepalNumber, byte archNumber);
+String commsIdFlowerSimonBridge();
 
 // startup.  use unique id that's built by the commsId* helpers. 
 void commsBegin(String id, byte ledPin=BUILTIN_LED);
