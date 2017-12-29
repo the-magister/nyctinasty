@@ -1,4 +1,6 @@
-// Compile for Nano
+// IDE Settings:
+// Tools->Board : "Arduino Nano"
+// Tools->Processor : "ATmega 328P"
 
 // This uC simply samples the distance sensors as quickly as possible,
 // then trasmits to Sepal_Arch_Freq over serial every distanceSampleRate ms.
@@ -23,10 +25,6 @@ Metro sendInterval(distanceSampleRate);
 // for comms
 SoftwareSerial mySerial(RX, TX); // cross pairs
 SoftEasyTransfer ETout;
-// on TX, use a voltage divider 3.3=5* R2/(R1+R2)
-// TX_Nano - R1 - RX_ESP - R2 - GND
-// R1 = 500 Ohm
-// R2 = 1000 Ohm (already installed with LED)
 
 // ship dist
 volatile SepalArchDistance dist;

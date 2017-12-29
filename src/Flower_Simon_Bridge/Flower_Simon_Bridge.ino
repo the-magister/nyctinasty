@@ -1,33 +1,18 @@
-// compile for WeMos D1 R2 & mini
+// IDE Settings:
+// Tools->Board : "WeMos D1 R2 & mini"
+// Tools->Flash Size : "4M (3M SPIFFS)"
+// Tools->CPU Frequency : "160 MHz"
+// Tools->Upload Speed : "921600"
+
 #include <Streaming.h>
 #include <Metro.h>
 #include <FiniteStateMachine.h>
-//#include <ESP8266httpUpdate.h>
+#include <RFM69.h>
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
 #include "Simon_Common.h"
-#include <RFM69.h>
-#include <SPI.h>
 
-// define a state for every systemState
-void idleUpdate(); State Idle = State(idleUpdate);
-void normalUpdate(); State Normal = State(normalUpdate);
-State Reboot = State(reboot);
-void reprogram() {
-  reprogram("Flower_Simon_Bridge.ino.bin");
-}; State Reprogram = State(reprogram);
-FSM stateMachine = FSM(Idle); //initialize state machine
-
-// who am I?
-const String id = commsIdFlowerSimonBridge();
-
-// ship settings
-SystemCommand settings;
-// in this topic
-const String settingsTopic = commsTopicSystemCommand();
-// and sets this true when an update arrives
-boolean settingsUpdate = false;
-
+// wire it up
 // Mini -> RFM69 board
 // D8 -> CS
 // D7 -> MOSI
@@ -42,27 +27,40 @@ boolean settingsUpdate = false;
 #define RF69_IRQ_NUM  digitalPinToInterrupt(RF69_IRQ_PIN)
 #define RF69_RST_PIN  D1
 RFM69 radio;
-simonSystemState simonMessage;
+
+// define a state for every systemState
+void idleUpdate(); State Idle = State(idleUpdate);
+void normalUpdate(); State Normal = State(normalUpdate);
+State Reboot = State(reboot);
+void reprogram() {
+  reprogram("Flower_Simon_Bridge.ino.bin");
+}; State Reprogram = State(reprogram);
+FSM stateMachine = FSM(Idle); // initialize state machine
+
+// incoming message storage and flag for update
+SystemCommand settings;     boolean settingsUpdate = false;
+SimonSystemState simonMessage;  boolean simonUpdate = false;
 
 void setup() {
   // for local output
   Serial.begin(115200);
 
-  Serial << endl << endl << F("Startup") << endl;
+  Serial << endl << endl << endl << F("Startup.") << endl;
 
-  commsBegin(id);
-  commsSubscribe(settingsTopic, &settings, &settingsUpdate, 1); // QoS 1
+  // who am I?
+  Id myId = commsBegin();
+  // subscriptions
+  commsSubscribe(commsTopicSystemCommand(), &settings, &settingsUpdate, 1); // QoS 1
+  commsSubscribe(commsTopicFxSimon(), &simonMessage, &simonUpdate); 
 
-  Serial << F("Startup.  Initializing WiFi radio.") << endl;
+  Serial << F("Startup. Initializing WiFi radio.") << endl;
   connectWiFi();
   delay(10000);
   connectMQTT("192.168.3.1");
   delay(3000);
   
-  Serial << F("Startup.  Initializing RFM69HW radio.") << endl;
+  Serial << F("Startup. Initializing RFM69HW radio.") << endl;
   radioInitialize();
-
-  Serial << F("Startup.  sizeof simonSystemState=") << sizeof(simonSystemState) << endl;
 
   Serial << F("Startup complete.") << endl;
 }
@@ -94,7 +92,7 @@ void switchState(systemState state) {
   switch ( state ) {
     case STARTUP: stateMachine.transitionTo(Idle); break;
     case NORMAL: stateMachine.transitionTo(Normal); break;
-    case CENTRAL: stateMachine.transitionTo(Idle); break;
+    case CENTRAL: stateMachine.transitionTo(Normal); break;
     case REBOOT: stateMachine.transitionTo(Reboot); break;
     case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
     default:
@@ -103,7 +101,8 @@ void switchState(systemState state) {
 }
 
 void idleUpdate() {
-  static Metro sendInterval(20UL);
+  // dick around with the lighting 
+  static Metro sendInterval(25UL);
   if( sendInterval.check() ) {
 
     // colors
@@ -111,25 +110,22 @@ void idleUpdate() {
     for( byte i=0; i<3; i++ ) {
       hue[i]+=1;
       CRGB color = CHSV(hue[i], 255, 255);
-      colorInstruction newColor;
-      newColor.red = color.red;
-      newColor.green = color.green;
-      newColor.blue = color.blue;
-
+ 
       // set in message
-      simonMessage.light[i] = newColor;
+      simonMessage.light[i].red = color.red;
+      simonMessage.light[i].green = color.green;
+      simonMessage.light[i].blue = color.blue;
     }
     
     // flame effects
     fireInstruction newFire;
-    newFire.duration = constrain(0, 0, 255);;
+    newFire.duration = constrain(0, 0, 255);
     newFire.effect = constrain(veryLean, veryRich, veryLean);
 
     // set in message
     simonMessage.fire[0] = newFire;
     simonMessage.fire[1] = newFire;
     simonMessage.fire[2] = newFire;
-    simonMessage.fire[3] = newFire; 
 
     // ship it
     radioSend();
@@ -137,15 +133,35 @@ void idleUpdate() {
   }
 }
 void normalUpdate() {
+  // look for messages and serve as a bridge
+
+  // packets get dropped.  we resend on an interval
+  static Metro sendInterval(25UL);
+
+  static byte packetNumber = 255;
+  if( simonUpdate ) {
+    packetNumber ++;
+    simonMessage.packetNumber = packetNumber;
+  
+    // ship it
+    radioSend();
+    sendInterval.reset();
+    
+    simonUpdate = false;
+  }
+
+  if( sendInterval.check() ) {
+    // ship it
+    radioSend();
+    sendInterval.reset();
+  }
 }
 
 void radioSend() {
   const systemMode sMode = EXTERN;
   simonMessage.mode = (byte)sMode;
 
-  simonMessage.packetNumber++;
-
-  radio.send((byte)BROADCAST, (const void*)(&simonMessage), sizeof(simonSystemState), false);  
+  radio.send((byte)BROADCAST, (const void*)(&simonMessage), sizeof(SimonSystemState), false);  
 }
 
 void radioReset() {

@@ -1,5 +1,9 @@
-// #define DEBUG_HTTP_UPDATE Serial.printf
-// Compile for Wemos D1 R2 & Mini
+// IDE Settings:
+// Tools->Board : "WeMos D1 R2 & mini"
+// Tools->Flash Size : "4M (3M SPIFFS)"
+// Tools->CPU Frequency : "160 MHz"
+// Tools->Upload Speed : "921600"
+
 // keep an windward eye on dynamic memory usage: may need to go up to an ESP32
 #include <Metro.h>
 #include <Streaming.h>
@@ -7,57 +11,45 @@
 #include <Eigen/LU>
 using namespace Eigen;    // simplifies syntax for declaration of matrices
 #include <FastLED.h>      // seems to need to be after the namespace 
-#include <EEPROM.h>
 #include <FiniteStateMachine.h>
-#include <ESP8266httpUpdate.h>
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
 
 // define a state for every systemState
-void startupUpdate(); State Startup = State(startupUpdate); 
+void startupUpdate(); State Startup = State(startupUpdate);
 void normalUpdate(); State Normal = State(normalUpdate);
 void idleUpdate(); State Idle = State(idleUpdate);
 State Reboot = State(reboot);
-void reprogram() { reprogram("Sepal_Coordinator.ino.bin"); } State Reprogram = State(reprogram);
-FSM stateMachine = FSM(Startup); //initialize state machine
+void reprogram() {
+  reprogram("Sepal_Coordinator.ino.bin");
+} State Reprogram = State(reprogram);
+FSM stateMachine = FSM(Startup); // initialize state machine
 
-// who am I?
-const byte SepalNumber = 0;
-const String id = commsIdSepalCoordinator(SepalNumber);
+// incoming message storage and flag for update
+SystemCommand settings;         boolean settingsUpdate = false;   String settingsTopic;
 
-// ship settings
-SystemCommand settings;
-// in this topic
-const String settingsTopic = commsTopicSystemCommand();
-// and sets this true when an update arrives
-boolean settingsUpdate = false;
+// incoming message storage and flag for update
+SepalArchFreq freq[N_ARCHES];   boolean freqUpdate[N_ARCHES] = {false};
 
-// our distance updates arrive as this structure
-SepalArchFreq freq[N_ARCHES];
-// in these topics
-const String freqTopic[N_ARCHES] = {
-  commsTopicFrequency(SepalNumber, 0),
-  commsTopicFrequency(SepalNumber, 1),
-  commsTopicFrequency(SepalNumber, 2)
-};
-// and sets this true when an update arrives
-boolean freqUpdate[N_ARCHES] = {false};
-
-// This function sets up the ledsand tells the controller about them
+// This function sets up the leds and tells the controller about them
 void setup() {
   Serial.begin(115200);
-  Serial.setDebugOutput(true);
-  
-  Serial << endl << endl << F("Startup.") << endl;
-  delay(500);
 
-  commsBegin(id);
+  Serial << endl << endl << endl << F("Startup.") << endl;
+
+  // who am I?
+  Id myId = commsBegin();
+
+  // publish
+  settingsTopic = commsTopicSystemCommand();
+  Serial << F("Publishing: ") << settingsTopic << endl;
+
+  // subscribe
   commsSubscribe(settingsTopic, &settings, &settingsUpdate, 1); // QoS 1
-  //  commsSubscribe(settingsTopic, &settings, settingsUpdate);
   for ( byte i = 0; i < N_ARCHES; i++ ) {
-    commsSubscribe(freqTopic[i], &freq[i], &freqUpdate[i]);
+    commsSubscribe(commsTopicFrequency(myId.sepal, i), &freq[i], &freqUpdate[i]);
   }
- 
+
   Serial << F("Startup. complete.") << endl;
 }
 
@@ -98,12 +90,12 @@ void startupUpdate() {
   // As a Coordinator, we're responsible for sending a NORMAL systemState after startup
   uint32_t startupDelay = 10000UL;
   static uint32_t tic = millis();
-  if( millis() < (tic+startupDelay) ) return;
- 
+  if ( millis() < (tic + startupDelay) ) return;
+
   Serial << F("State.  Sending NORMAL...") << endl;
-  
+
   settings.state = NORMAL;
-  commsPublish(settingsTopic, &settings); 
+  commsPublish(settingsTopic, &settings);
 
   // go to central update while we wait for our subscription to arrive
   stateMachine.transitionTo(Idle);

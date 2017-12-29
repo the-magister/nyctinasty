@@ -40,8 +40,6 @@ typedef struct {
 #define N_SENSOR 8
 const uint32_t distanceSampleRate = 20; // ms
 typedef struct {
-	// track provenance
-	byte sepal, arch;
 	// min and max range information
 	uint16_t min, max; // ADC limits
 	// noise level in readings; values less than this are sketchy
@@ -49,13 +47,10 @@ typedef struct {
 	// proximity.  bigger numbers = closer to arch
 	uint16_t prox[N_SENSOR];
 } SepalArchDistance;
-// size_of = 2*(3+8)+2 = 24 bytes
 
 // FFT analysis of the distance data
 #define N_FREQ_BINS 16 // number of discrete frequency bins to report
 typedef struct {
-	// track provenance
-	byte sepal, arch;
 	// average power; something like the mean of the frequency bins
 	uint16_t avgPower[N_SENSOR]={0};
 	// frequency power
@@ -66,13 +61,11 @@ typedef struct {
 // lights on the Sepal arches, as a crazy-big structure
 #define N_LEDS 16
 typedef struct {
-	byte sepal, arch; // track provenance
 	CRGB bar[N_SENSOR]; // SepalArchBar[0] leftmost
 	CRGB leftUp[N_LEDS]; // leftUp[NUM_LEDS_UP-1] leftmost and top of the up segment
 	CRGB rightUp[N_LEDS]; // rightUp(5,6) rightmost; up segment's 5th and 6th led.
 	CRGB leftDown[N_LEDS]; // leftDown.fill_rainbow(HUE_BLUE, 5) left "leg" is colorful.
 	CRGB rightDown[N_LEDS]; // rightDown[1].blur1d(128) rightmost top of the down segment is blurry
 } SepalArchLight;
-// size_of = 3*(8+2*16+2*16) = 216 bytes
 
 #endif

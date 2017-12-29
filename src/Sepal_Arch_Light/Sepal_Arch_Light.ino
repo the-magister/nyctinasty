@@ -13,6 +13,12 @@
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
 
+// wire it up
+//#define DATA_PIN_LeftDown D5
+//#define DATA_PIN_RightDown D6
+//#define DATA_PIN_RightUp D7
+//#define DATA_PIN_LeftUp D8
+
 // define a state for every systemState
 void idleUpdate(); State Idle = State(idleUpdate);
 void normalUpdate(); State Normal = State(normalUpdate);
@@ -22,37 +28,17 @@ void reprogram() {
 } State Reprogram = State(reprogram);
 FSM stateMachine = FSM(Idle); //initialize state machine
 
-// who am I?
-const byte sepalNumber = 0;
-const byte archNumber = 0;
-const String id = commsIdSepalArchLight(sepalNumber, archNumber);
-const byte archHue = (256/N_ARCHES) * archNumber;
-const byte archSat = 128;
+// incoming message storage and flag for update
+SystemCommand settings;     boolean settingsUpdate = false;
 
-// ship settings
-SystemCommand settings;
-// in this topic
-const String settingsTopic = commsTopicSystemCommand();
-// and sets this true when an update arrives
-boolean settingsUpdate = false;
+// incoming message storage and flag for update
+SepalArchDistance dist;     boolean distUpdate = false;
 
-// our distance updates send as this structure
-SepalArchDistance dist;
-// in this topic
-const String distTopic = commsTopicDistance(sepalNumber, archNumber);
-boolean distUpdate = false;
+// incoming message storage and flag for update
+SepalArchFreq freq;         boolean freqUpdate = false;
 
-// our distance updates send as this structure
-SepalArchFreq freq;
-// in this topic
-const String freqTopic = commsTopicFrequency(sepalNumber, archNumber);
-boolean freqUpdate = false;
-
-// pins to data lines
-//#define DATA_PIN_LeftDown D5
-//#define DATA_PIN_RightDown D6
-//#define DATA_PIN_RightUp D7
-//#define DATA_PIN_LeftUp D8
+// color choices, based on arch and sepal information
+byte archHue, archSat;
 
 // our internal storage, mapped to the hardware.
 // pay no attention to the man behind the curtain.
@@ -76,10 +62,21 @@ CRGBSet rightUp(&ledsRightUp[N_SENSOR / 2], N_LEDS);
 void setup() {
   Serial.begin(115200);
 
-  commsBegin(id);
-  commsSubscribe(settingsTopic, &settings, &settingsUpdate);
-  commsSubscribe(distTopic, &dist, &distUpdate);
-  commsSubscribe(freqTopic, &freq, &freqUpdate);
+  Serial << endl << endl << endl << F("Startup.") << endl;
+
+  // who am I?
+  Id myId = commsBegin();
+
+  // lighting choice
+  archHue = (256/N_ARCHES) * myId.arch;
+  archSat = 128;
+
+  // subscribe
+  commsSubscribe(commsTopicSystemCommand(), &settings, &settingsUpdate, 1); // QoS 1
+  commsSubscribe(commsTopicDistance(myId.sepal, myId.arch), &dist, &distUpdate);
+  commsSubscribe(commsTopicFrequency(myId.sepal, myId.arch), &freq, &freqUpdate);
+  
+  // start the wifi connection while we test lights
   commsUpdate();
 
   //  FastLED.addLeds<WS2811, DATA_PIN_LeftDown, RGB>(ledsLeftDown, ledsLeftDown.size()).setCorrection(COLOR_CORRECTION);

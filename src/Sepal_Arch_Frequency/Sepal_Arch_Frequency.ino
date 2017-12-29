@@ -1,13 +1,24 @@
-// compile for WeMos D1 R2 & mini
+// IDE Settings:
+// Tools->Board : "WeMos D1 R2 & mini"
+// Tools->Flash Size : "4M (3M SPIFFS)"
+// Tools->CPU Frequency : "160 MHz"
+// Tools->Upload Speed : "921600"
+
 #include <Streaming.h>
 #include <Metro.h>
 #include <arduinoFFT.h>
 #include <SoftwareSerial.h>
 #include <SoftEasyTransfer.h>
 #include <FiniteStateMachine.h>
-#include <ESP8266httpUpdate.h>
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
+
+// wire it up
+#define RX D5
+#define TX D6
+// voltage divider: 5V->3.3V
+// TX to RX_ESP via 820 Ohm resistor
+// RX_ESP to GND via 1500 Ohm resistor
 
 // define a state for every systemState
 void idleUpdate(); State Idle = State(idleUpdate);
@@ -16,43 +27,23 @@ State Reboot = State(reboot);
 void reprogram() {
   reprogram("Sepal_Arch_Frequency.ino.bin");
 }; State Reprogram = State(reprogram);
-FSM stateMachine = FSM(Idle); //initialize state machine
+FSM stateMachine = FSM(Idle); // initialize state machine
 
-// who am I?
-const byte sepalNumber = 0;
-const byte archNumber = 0;
-const String id = commsIdSepalArchFrequency(sepalNumber, archNumber);
+// incoming message storage and flag for update
+SystemCommand settings;     boolean settingsUpdate = false;
 
-// ship settings
-SystemCommand settings;
-// in this topic
-const String settingsTopic = commsTopicSystemCommand();
-// and sets this true when an update arrives
-boolean settingsUpdate = false;
+// our distance updates send as this structure as this topic
+SepalArchDistance dist;     String distTopic;
 
-// our distance updates send as this structure
-SepalArchDistance dist;
-// in this topic
-const String distTopic = commsTopicDistance(sepalNumber, archNumber);
-
-// our frequency updates send as this structure
-SepalArchFreq freq;
-// in this topic
-const String freqTopic = commsTopicFrequency(sepalNumber, archNumber);
+// our frequency updates send as this structure as this topic
+SepalArchFreq freq;         String freqTopic;
 
 // FFT object
-//#define N_FREQ_SAMPLES (uint16_t)(1<<8)  // This value MUST ALWAYS be a power of 2
 #define N_FREQ_SAMPLES (uint16_t)(1<<7)  // This value MUST ALWAYS be a power of 2
 uint16_t buffer[N_SENSOR][N_FREQ_SAMPLES];
 boolean bufferReady = false;
 arduinoFFT FFT = arduinoFFT();
 
-// for comms
-#define RX D5
-#define TX D6
-// voltage divider: 5V->3.3V
-// TX to RX_ESP via 820 Ohm resistor
-// RX_ESP to GND via 1500 Ohm resistor
 SoftwareSerial mySerial(RX, TX, false, 1024);
 SoftEasyTransfer ETin;
 
@@ -60,7 +51,7 @@ void setup() {
   // for local output
   Serial.begin(115200);
 
-  Serial << endl << endl << F("Startup") << endl;
+  Serial << endl << endl << endl << F("Startup.") << endl;
 
   // for remote output
   mySerial.begin(115200);
@@ -68,11 +59,18 @@ void setup() {
   // messages
   ETin.begin(details(dist), &mySerial);
 
-  commsBegin(id);
-  commsSubscribe(settingsTopic, &settings, &settingsUpdate, 1); // QoS 1
+  // who am I?
+  Id myId = commsBegin();
+
+  // publish
+  distTopic = commsTopicDistance(myId.sepal, myId.arch);
+  freqTopic = commsTopicFrequency(myId.sepal, myId.arch);
   Serial << F("Publishing: ") << distTopic << endl;
   Serial << F("Publishing: ") << freqTopic << endl;
 
+  // subscribe
+  commsSubscribe(commsTopicSystemCommand(), &settings, &settingsUpdate, 1); // QoS 1
+  
   Serial << F("Startup complete") << endl;
 }
 
@@ -121,8 +119,6 @@ void normalUpdate() {
   // read ADCs
   if ( ETin.receiveData() ) {
     // ship it
-    dist.sepal = sepalNumber;
-    dist.arch = archNumber;
     commsPublish(distTopic, &dist);
 
     // fill buffer
@@ -148,8 +144,6 @@ void normalUpdate() {
       // noting that we don't publish on the same loop as a compute
       publishReady = false;
       // publish
-      freq.sepal = sepalNumber;
-      freq.arch = archNumber;
       commsPublish(freqTopic, &freq);
     }
 

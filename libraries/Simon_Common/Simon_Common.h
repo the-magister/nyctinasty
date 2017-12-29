@@ -155,6 +155,6 @@ typedef struct {
   byte animation; // not animationInstruction.  enums are stored as ints (2 bytes), and we only need 1 byte to represent the animations.
   fireInstruction fire[N_COLORS];
 
-} simonSystemState;
+} SimonSystemState; // did change the name here to not conflict.
 
 #endif

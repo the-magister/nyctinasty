@@ -15,19 +15,60 @@ String subTopic[maxTopics];
 void * subStorage[maxTopics];
 boolean * subUpdate[maxTopics];
 byte subQoS[maxTopics];
-//void (* subCallback[maxTopics])();
 
-
-void getIdEEPROM(Id id) {
+Id getIdEEPROM(boolean resetRole) {
+	Id id;
 	EEPROM.begin(512);
 	EEPROM.get(0, id);
-	EEPROM.commit();
+	
+	if( resetRole || id.checksum != 8675309) {
+		// Yikes.  Fresh uC with no information on its role in life.  
+		setOnLED();
+
+		// bootstrap
+		id.checksum = 8675309;
+		Serial << F("*** No role information in EEPROM ***") << endl;
+		
+		Serial.setTimeout(10);
+		
+		Serial << F("Enter Role. ") << endl;
+		while(! Serial.available()) yield();
+		String m = Serial.readString();
+		m.toCharArray(id.role, sizeof(id.role));
+		
+		Serial << F("Enter Sepal. ") << N_SEPALS << F(" for N/A.") << endl;
+		while(! Serial.available()) yield();
+		m = Serial.readString();
+		id.sepal = (byte)m.toInt();
+		
+		Serial << F("Enter Arch. ") << N_ARCHES << F(" for N/A.") << endl;
+		while(! Serial.available()) yield();
+		m = Serial.readString();
+		id.arch = (byte)m.toInt();
+		
+		putIdEEPROM(id);
+	} else {
+		Serial << F("from EEPROM.");
+		Serial << F(" role=") << id.role;
+		Serial << F(" sepal=") << id.sepal;
+		Serial << F(" arch=") << id.arch;
+		Serial << F(" checksum=") << id.checksum;
+		Serial << endl;
+	}
+	
 	EEPROM.end();
+
+	return( id );
 }
 void putIdEEPROM(Id id) {
-	EEPROM.begin(512);
-	EEPROM.get(0, id);
-	EEPROM.end();
+	Serial << F("to EEPROM.");
+	Serial << F(" role=") << id.role;
+	Serial << F(" sepal=") << id.sepal;
+	Serial << F(" arch=") << id.arch;
+	Serial << F(" checksum=") << id.checksum;
+	Serial << endl;
+
+	EEPROM.put(0, id);
 }
 
 
@@ -39,81 +80,44 @@ Project:	nyc
 */
 
 // ID and topics
-const String project = "nyc";
-const String sep = "/";
-const String oneWild = "+";
-const String roles[] = {"Frequency","Coordinator","Light","Sound","Fx","UI"};
+String commsIdSepalArchFrequency(byte s, byte a) { return commsStringConstructor("Frequency", s, a); }
+String commsIdSepalCoordinator(byte s) { return commsStringConstructor("Coordinator", s, N_ARCHES); }
+String commsIdSepalArchLight(byte s, byte a) { return commsStringConstructor("FxSimon", s, a); }
+String commsIdFlowerSimonBridge() { return commsStringConstructor("Fx-Simon"); }
 
-String commsIdSepalArchFrequency(byte sepalNumber, byte archNumber) {
-	return( 
-		project + sep + 
-			roles[0] + sep + 
-				String(sepalNumber,10) + sep + 
-					String(archNumber,10)
-	);
-
-}
-String commsIdSepalCoordinator(byte sepalNumber) {
-	return(
-		project + sep + 
-			roles[1] + sep + 
-				String(sepalNumber,10)  
-	);
-}
-String commsIdSepalArchLight(byte sepalNumber, byte archNumber) {
-	return( 
-		project + sep + 
-			roles[2] + sep + 
-				String(sepalNumber,10) + sep + 
-					String(archNumber,10)
-	);
-}
-String commsIdFlowerSimonBridge() {
-	return( 
-		project + sep + 
-			roles[4]
-	);
-}
 // subscription topics
-const String messages[] = {"Settings","Light","Dist","Freq"};
+// note that wildcards are not supported, as we use string matching to determine incoming messages
+String commsTopicSystemCommand() { return commsStringConstructor("Settings"); }
+String commsTopicLight(byte s, byte a) { return commsStringConstructor("Light", s, a); }
+String commsTopicDistance(byte s, byte a) { return commsStringConstructor("Dist", s, a); }
+String commsTopicFrequency(byte s, byte a) { return commsStringConstructor("Freq", s, a); }
+String commsTopicFxSimon() { return commsStringConstructor("Fx/Simon"); }
 
-String commsTopicSystemCommand() {
-	return( 
-		project + sep + 
-			messages[0]
-	);
-
-}
-String commsTopicLight(byte sepalNumber, byte archNumber) {
-	return( 
-		project + sep + 
-			messages[1] + sep + 
-				(sepalNumber>=N_SEPALS ? oneWild : String(sepalNumber,10)) + sep + 
-					(archNumber>=N_ARCHES ? oneWild : String(archNumber,10))
-	);
-}
-String commsTopicDistance(byte sepalNumber, byte archNumber) {
-	return( 
-		project + sep + 
-			messages[2] + sep + 
-				(sepalNumber>=N_SEPALS ? oneWild : String(sepalNumber,10)) + sep + 
-					(archNumber>=N_ARCHES ? oneWild : String(archNumber,10))
-	);
-
-}
-String commsTopicFrequency(byte sepalNumber, byte archNumber) {
-	return( 
-		project + sep + 
-			messages[3] + sep + 
-				(sepalNumber>=N_SEPALS ? oneWild : String(sepalNumber,10)) + sep + 
-					(archNumber>=N_ARCHES ? oneWild : String(archNumber,10))
-	);
-
-}
-
-void commsBegin(String id, byte ledPin) {
-	Serial << "commsBegin with id: " << id << endl;
+String commsStringConstructor(String topic, byte sepalNumber, byte archNumber) {
+	const String project = "nyc";
+	const String sep = "/";
 	
+	String sepal = (sepalNumber < N_SEPALS) ? ( sep + String(sepalNumber,10) ) : "";
+	String arch = (archNumber < N_ARCHES && sepalNumber < N_SEPALS) ? ( sep + String(archNumber,10) ) : "";
+
+	String sub = project + sep + topic + sepal + arch;
+//	Serial << sub << endl;
+	return sub;
+}
+
+Id commsBegin(boolean resetRole, byte ledPin) {
+	Serial << "Startup. commsBegin starts." << endl;
+
+	// prep the LED
+	myLED = ledPin;
+	pinMode(myLED, OUTPUT);
+	toggleLED();
+	setOffLED();
+
+	// figure out who I am.
+	Id id = getIdEEPROM(resetRole);
+	
+	// comms setup
 	if( WiFi.status()==WL_CONNECTED ) WiFi.disconnect();
 	
 // variation in WiFi library calls btw ESP8266 and ESP32
@@ -128,17 +132,13 @@ void commsBegin(String id, byte ledPin) {
 	WiFi.mode(WIFI_STA);
 #endif 
 
-	myID = id;
-	otaID = id;
+	myID = commsStringConstructor(id.role, id.sepal, id.arch);
+	otaID = id.role;
 	otaID.replace("/","-");
+	Serial << F("Startup. MQTT id=") << otaID << endl;
 	
 	mqtt.setClient(espClient);
 	mqtt.setCallback(commsCallback);
-
-	myLED = ledPin;
-	pinMode(myLED, OUTPUT);
-	toggleLED();
-	setOffLED();
 
 	// enable OTA pull programming.  reboots after a new payload.
 	ESPhttpUpdate.rebootOnUpdate(true);
@@ -153,6 +153,7 @@ void commsBegin(String id, byte ledPin) {
 	});
 	ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
 		Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+		toggleLED();
 	});
 	ArduinoOTA.onError([](ota_error_t error) {
 		Serial.printf("Error[%u]: ", error);
@@ -163,6 +164,10 @@ void commsBegin(String id, byte ledPin) {
 		else if (error == OTA_END_ERROR) Serial.println("End Failed");
 	});
 	
+	
+	Serial << "Startup. commsBegin ends." << endl;
+	
+	return( id );
 }
 
 void setOnLED() {
@@ -197,18 +202,16 @@ void commsCallback(char* topic, byte* payload, unsigned int length) {
 
 	// String class is much easier to work with
 	String t = topic;
-//	Serial << topic << " received." << endl;
 	
 	// run through topics we're subscribed to
 	for( byte i=0;i < nTopics;i++ ) {
 		if( t.equals(subTopic[i]) ) {
-			// toggle the LED when we GET a new message
-			toggleLED();
 			// copy memory
 			memcpy( subStorage[i], (void*)payload, length );
 			*subUpdate[i] = true;
-			// run the user-defined callback
-//			subCallback[i]();
+			
+			// toggle the LED when we GET a new message
+			toggleLED();
 			return;
 		}
 	}
@@ -228,20 +231,6 @@ void commsSubscribe(String topic, void * storage, boolean * updateFlag, uint8_t 
 	subQoS[nTopics] = QoS;
 	nTopics++;
 }
-/*
-void commsSubscribe(String topic, void * storage, void (*callBackFunction)()) {
-	// check to see if we've execeed the buffer size
-	if( nTopics >= maxTopics ) {
-		Serial << F("Increase Nyctinasty_Comms.cpp maxTopics!!!  Halting.") << endl;
-		while(1) yield();
-	}
-	// queue subscriptions.  actual subscriptions happen at every (re)connect to the broker.
-	subTopic[nTopics] = topic;
-	subStorage[nTopics] = storage;
-	subCallback[nTopics] = callBackFunction; 
-	nTopics++;
-}
-*/
 
 // publish to a topic
 boolean commsPublish(String topic, uint8_t * msg, unsigned int msgBytes) {
@@ -263,6 +252,8 @@ boolean commsPublish(String topic, uint8_t * msg, unsigned int msgBytes) {
 void connectWiFi(String ssid, String passwd, unsigned long interval) {
 	static Metro connectInterval(interval);
 	static byte retryCount = 0;
+	
+	if (WiFi.status()==WL_CONNECTED) retryCount = 0;
 	
 	if ( connectInterval.check() ) {
 		retryCount++;
@@ -311,14 +302,12 @@ void connectMQTT(String broker, word port, unsigned long interval) {
 				boolean ret = mqtt.subscribe(subTopic[i].c_str(), subQoS[i]);
 				Serial << F(". OK? ") << ret << endl;
 			}
+			
+			retryCount = 0;
 
 		} else {
 			Serial << F("Failed. state=") << mqtt.state() << endl;
 			Serial << F("WiFi status connected? ") << (WiFi.status()==WL_CONNECTED) << endl;
-			if( mqtt.state()==MQTT_CONNECT_FAILED ) {
-				Serial << "Restarting WiFi..." << endl;
-				commsBegin(myID, myLED);
-			}
 		}
 
 		connectInterval.reset();
