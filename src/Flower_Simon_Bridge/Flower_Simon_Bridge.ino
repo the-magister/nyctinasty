@@ -28,10 +28,18 @@ const String settingsTopic = commsTopicSystemCommand();
 // and sets this true when an update arrives
 boolean settingsUpdate = false;
 
-// for comms
+// Mini -> RFM69 board
+// D8 -> CS
+// D7 -> MOSI
+// D6 -> MISO
+// D5 -> SCK
+// D2 -> D0
+// D1 -> RST
+// 3V3 -> VIN
+// G -> GND
+#define RF69_SPI_CS   D8
 #define RF69_IRQ_PIN  D2
 #define RF69_IRQ_NUM  digitalPinToInterrupt(RF69_IRQ_PIN)
-#define RF69_SPI_CS   D8
 #define RF69_RST_PIN  D1
 RFM69 radio;
 simonSystemState simonMessage;
