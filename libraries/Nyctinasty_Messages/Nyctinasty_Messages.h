@@ -2,7 +2,6 @@
 #define Nyctinasty_Messages_h
 
 #include <Arduino.h>
-#include <FastLED.h> // for CRGB definition
 
 // system states. probably want to implement a FSM on each uC to work with these.
 /*
@@ -15,7 +14,7 @@
 enum systemState {
 // note: starting at '48' implies that a plain text "0" will be interpreted as the zeroith element.
 //state				default	subscriptions	publications	
-  STARTUP=48,	//	yes		ANY				NONE
+  IDLE=48,		//	yes		ANY				NONE
   NORMAL,		//	no		ANY				ANY
   CENTRAL,		//	no		ANY				Coordinator
   
@@ -27,17 +26,19 @@ enum systemState {
 
 // command structure
 typedef struct {
-	systemState state={STARTUP}; // critical that this is defaulted to STARTUP
+	systemState state={IDLE}; // critical that this is defaulted to STARTUP
 } SystemCommand;
-
+	
 // number of Sepals
-#define N_SEPALS 3
+#define N_SEPAL 3
 
-// number of arches per Sepal
-#define N_ARCHES 3
+// number of Arches per Sepal
+#define N_ARCH 3
 
-// distance sensors on the Sepal arches
+// number of distance Sensors per Arch
 #define N_SENSOR 8
+
+// distance data
 const uint32_t distanceSampleRate = 20; // ms
 typedef struct {
 	// min and max range information
@@ -54,18 +55,8 @@ typedef struct {
 	// average power; something like the mean of the frequency bins
 	uint16_t avgPower[N_SENSOR]={0};
 	// frequency power
-	uint16_t power[N_SENSOR][N_FREQ_BINS]={{0.0}};
+	uint16_t power[N_SENSOR][N_FREQ_BINS]={{0}};
 	// the specific frequency of power[i][j] is (j+1)*distanceSampleRate/N_FREQ_SAMPLES
-} SepalArchFreq;
-
-// lights on the Sepal arches, as a crazy-big structure
-#define N_LEDS 16
-typedef struct {
-	CRGB bar[N_SENSOR]; // SepalArchBar[0] leftmost
-	CRGB leftUp[N_LEDS]; // leftUp[NUM_LEDS_UP-1] leftmost and top of the up segment
-	CRGB rightUp[N_LEDS]; // rightUp(5,6) rightmost; up segment's 5th and 6th led.
-	CRGB leftDown[N_LEDS]; // leftDown.fill_rainbow(HUE_BLUE, 5) left "leg" is colorful.
-	CRGB rightDown[N_LEDS]; // rightDown[1].blur1d(128) rightmost top of the down segment is blurry
-} SepalArchLight;
+} SepalArchFrequency;
 
 #endif

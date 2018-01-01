@@ -1,4 +1,9 @@
-// Compile for Wemos D1 R2 & Mini
+// IDE Settings:
+// Tools->Board : "WeMos D1 R2 & mini"
+// Tools->Flash Size : "4M (3M SPIFFS)"
+// Tools->CPU Frequency : "160 MHz"
+// Tools->Upload Speed : "921600"
+
 #include <Metro.h>
 #include <Streaming.h>
 // pin order
@@ -9,7 +14,6 @@
 // with retries on strip updates
 #include <FastLED.h>
 #include <FiniteStateMachine.h>
-#include <ESP8266httpUpdate.h>
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
 
@@ -19,23 +23,28 @@
 //#define DATA_PIN_RightUp D7
 //#define DATA_PIN_LeftUp D8
 
+// comms
+NyctComms comms;
+
 // define a state for every systemState
-void idleUpdate(); State Idle = State(idleUpdate);
-void normalUpdate(); State Normal = State(normalUpdate);
-State Reboot = State(reboot);
-void reprogram() {
-  reprogram("Sepal_Arch_Light.ino.bin");
-} State Reprogram = State(reprogram);
+void idle(); State Idle = State(idle);
+void normal(); State Normal = State(normal);
+void central(); State Central = State(central);
+void reboot() { comms.reboot(); }; State Reboot = State(reboot);
+void reprogram() { comms.reprogram("Sepal_Arch_Light.ino.bin"); } State Reprogram = State(reprogram);
 FSM stateMachine = FSM(Idle); //initialize state machine
 
-// incoming message storage and flag for update
-SystemCommand settings;     boolean settingsUpdate = false;
+// my role
+NyctRole role = Light;
 
 // incoming message storage and flag for update
-SepalArchDistance dist;     boolean distUpdate = false;
+struct sC_t { boolean hasUpdate=false; SystemCommand settings; } sC;
 
 // incoming message storage and flag for update
-SepalArchFreq freq;         boolean freqUpdate = false;
+struct sAD_t { boolean hasUpdate=false; SepalArchDistance dist; } sAD;
+
+// incoming message storage and flag for update
+struct sAF_t { boolean hasUpdate=false; SepalArchFrequency freq; } sAF;
 
 // color choices, based on arch and sepal information
 byte archHue, archSat;
@@ -43,6 +52,7 @@ byte archHue, archSat;
 // our internal storage, mapped to the hardware.
 // pay no attention to the man behind the curtain.
 #define NUM_PINS 4
+#define N_LEDS 16
 #define LEDS_PER_PIN (N_LEDS+N_SENSOR/2)
 CRGB leds[NUM_PINS * LEDS_PER_PIN];
 CRGBSet ledsLeftDown(&leds[0 * LEDS_PER_PIN], LEDS_PER_PIN);
@@ -64,20 +74,17 @@ void setup() {
 
   Serial << endl << endl << endl << F("Startup.") << endl;
 
-  // who am I?
-  Id myId = commsBegin();
+  // start comms
+  comms.begin(role);
 
   // lighting choice
-  archHue = (256/N_ARCHES) * myId.arch;
+  archHue = (256/N_ARCH) * comms.getArch();
   archSat = 128;
 
   // subscribe
-  commsSubscribe(commsTopicSystemCommand(), &settings, &settingsUpdate, 1); // QoS 1
-  commsSubscribe(commsTopicDistance(myId.sepal, myId.arch), &dist, &distUpdate);
-  commsSubscribe(commsTopicFrequency(myId.sepal, myId.arch), &freq, &freqUpdate);
-  
-  // start the wifi connection while we test lights
-  commsUpdate();
+  comms.subscribe(&sC.settings, &sC.hasUpdate); 
+  comms.subscribe(&sAD.dist, &sAD.hasUpdate); 
+  comms.subscribe(&sAF.freq, &sAF.hasUpdate); 
 
   //  FastLED.addLeds<WS2811, DATA_PIN_LeftDown, RGB>(ledsLeftDown, ledsLeftDown.size()).setCorrection(COLOR_CORRECTION);
   //  FastLED.addLeds<WS2811, DATA_PIN_RightDown, RGB>(ledsRightDown, ledsRightDown.size()).setCorrection(COLOR_CORRECTION);
@@ -86,7 +93,7 @@ void setup() {
   FastLED.addLeds<WS2811_PORTA, NUM_PINS, RGB>(leds, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
   FastLED.setBrightness(255);
 
-  runStartupPattern();
+//  runStartupPattern();
 
   FastLED.clear();
   FastLED.show();
@@ -94,15 +101,12 @@ void setup() {
 
 void loop() {
   // comms handling
-  commsUpdate();
-
-  // bail out if not connected
-  if ( ! commsConnected() ) return;
+  comms.update();
 
   // check for settings update
-  if ( settingsUpdate ) {
-    switchState(settings.state);
-    settingsUpdate = false;
+  if ( sC.hasUpdate ) {
+    switchState(sC.settings.state);
+    sC.hasUpdate = false;
   }
 
   // do stuff
@@ -118,9 +122,9 @@ void loop() {
 void switchState(systemState state) {
   Serial << F("State.  Changing to ") << state << endl;
   switch ( state ) {
-    case STARTUP: stateMachine.transitionTo(Idle); break;
+    case IDLE: stateMachine.transitionTo(Idle); break;
     case NORMAL: stateMachine.transitionTo(Normal); break;
-    case CENTRAL: stateMachine.transitionTo(Normal); break;
+    case CENTRAL: stateMachine.transitionTo(Central); break;
     case REBOOT: stateMachine.transitionTo(Reboot); break;
     case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
     default:
@@ -128,7 +132,7 @@ void switchState(systemState state) {
   }
 }
 
-void idleUpdate() {
+void idle() {
   static byte hue = 0;
 
   EVERY_N_MILLISECONDS(20) {
@@ -153,24 +157,29 @@ void idleUpdate() {
 
 }
 
-void normalUpdate() {
+void normal() {
   // check for an update to distance
-  if ( distUpdate ) {
+  if ( sAD.hasUpdate ) {
     // map distance to lights
     mapDistanceToBar();
 
     // reset
-    distUpdate = false;
+    sAD.hasUpdate = false;
   }
 
   // check for an update to frequency
-  if ( freqUpdate ) {
+  if ( sAF.hasUpdate ) {
     // map frequency to legs
     mapFreqToLegs();
 
     // reset
-    freqUpdate = false;
+    sAF.hasUpdate = false;
   }
+}
+
+void central() {
+  // probably want
+  // https://github.com/ppelleti/esp-opc-server/blob/master/esp-opc-server.ino
 }
 
 void mapFreqToLegs() {
@@ -183,7 +192,7 @@ void mapFreqToLegs() {
   uint32_t maxSum = 0;
   for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
     for ( byte i = 0; i < N_SENSOR; i++ ) {
-      sumSensors[j] += freq.power[i][j];
+      sumSensors[j] += sAF.freq.power[i][j];
     }
     if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
   }
@@ -209,8 +218,8 @@ void mapDistanceToBar() {
 
   for ( byte i = 0; i < N_SENSOR; i++ ) {
     uint16_t intensity = map(
-                           dist.prox[i] > dist.noise ? dist.prox[i] : 0,
-                           dist.min, dist.max,
+                           sAD.dist.prox[i] > sAD.dist.noise ? sAD.dist.prox[i] : 0,
+                           sAD.dist.min, sAD.dist.max,
                            (uint16_t)0, (uint16_t)255
                          );
     bar[i % N_SENSOR] = CHSV(archHue, archSat, (byte)intensity);
@@ -279,34 +288,18 @@ void runStartupPattern() {
   }
 
   // down lights update
-  CRGBArray<N_LEDS> leftDown;
-  CRGBArray<N_LEDS> rightDown;
   leftDown.fill_solid(CRGB::Black);
-  rightDown.fill_solid(CRGB::Black);
   leftDown[0] = CRGB::Green;
-  rightDown[0] = CRGB::Green;
-  leftDown[N_LEDS - 1] = CRGB::Red;
-  rightDown[N_LEDS - 1] = CRGB::Red;
-  const uint16_t startDown = halfBar + 1;
-  const uint16_t endDown = ledsLeftDown.size() - 1;
-  ledsLeftDown(startDown, endDown) = leftDown;
-  ledsRightDown(startDown, endDown) = rightDown;
+  leftDown[leftDown.size()-1] = CRGB::Red;
+  rightDown = leftDown;
   FastLED.show();
   delay(333);
 
   // up lights update
-  CRGBArray<N_LEDS> leftUp;
-  CRGBArray<N_LEDS> rightUp;
   leftUp.fill_solid(CRGB::Black);
-  rightUp.fill_solid(CRGB::Black);
   leftUp[0] = CRGB::Green;
-  rightUp[0] = CRGB::Green;
-  leftUp[N_LEDS - 1] = CRGB::Red;
-  rightUp[N_LEDS - 1] = CRGB::Red;
-  const uint16_t startUp = halfBar + 1;
-  const uint16_t endUp = ledsLeftUp.size() - 1;
-  ledsLeftUp(startUp, endUp) = leftUp;
-  ledsRightUp(startUp, endUp) = rightUp;
+  leftUp[leftUp.size()-1] = CRGB::Red;
+  rightUp = leftUp;
   FastLED.show();
   delay(333);
 

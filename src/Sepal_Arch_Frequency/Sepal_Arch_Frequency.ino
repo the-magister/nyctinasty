@@ -20,23 +20,28 @@
 // TX to RX_ESP via 820 Ohm resistor
 // RX_ESP to GND via 1500 Ohm resistor
 
+// comms
+NyctComms comms;
+
 // define a state for every systemState
-void idleUpdate(); State Idle = State(idleUpdate);
-void normalUpdate(); State Normal = State(normalUpdate);
-State Reboot = State(reboot);
-void reprogram() {
-  reprogram("Sepal_Arch_Frequency.ino.bin");
-}; State Reprogram = State(reprogram);
+void idle(); State Idle = State(idle);
+void normal(); State Normal = State(normal);
+void central(); State Central = State(central);
+void reboot() { comms.reboot(); }; State Reboot = State(reboot);
+void reprogram() { comms.reprogram("Sepal_Arch_Frequency.ino.bin"); }; State Reprogram = State(reprogram);
 FSM stateMachine = FSM(Idle); // initialize state machine
 
+// my role
+NyctRole role = Frequency;
+
 // incoming message storage and flag for update
-SystemCommand settings;     boolean settingsUpdate = false;
+struct sC_t { boolean hasUpdate=false; SystemCommand settings; } sC;
 
 // our distance updates send as this structure as this topic
-SepalArchDistance dist;     String distTopic;
+SepalArchDistance dist;
 
 // our frequency updates send as this structure as this topic
-SepalArchFreq freq;         String freqTopic;
+SepalArchFrequency freq;
 
 // FFT object
 #define N_FREQ_SAMPLES (uint16_t)(1<<7)  // This value MUST ALWAYS be a power of 2
@@ -59,32 +64,26 @@ void setup() {
   // messages
   ETin.begin(details(dist), &mySerial);
 
-  // who am I?
-  Id myId = commsBegin();
-
-  // publish
-  distTopic = commsTopicDistance(myId.sepal, myId.arch);
-  freqTopic = commsTopicFrequency(myId.sepal, myId.arch);
-  Serial << F("Publishing: ") << distTopic << endl;
-  Serial << F("Publishing: ") << freqTopic << endl;
+  // start comms
+  comms.begin(role);
 
   // subscribe
-  commsSubscribe(commsTopicSystemCommand(), &settings, &settingsUpdate, 1); // QoS 1
-  
+  comms.subscribe(&sC.settings, &sC.hasUpdate);
+ 
   Serial << F("Startup complete") << endl;
 }
 
 void loop() {
   // comms handling
-  commsUpdate();
+  comms.update();
 
   // bail out if not connected
-  if ( ! commsConnected() ) return;
+  if ( ! comms.isConnected() ) return;
 
   // check for settings update
-  if ( settingsUpdate ) {
-    switchState(settings.state);
-    settingsUpdate = false;
+  if ( sC.hasUpdate ) {
+    switchState(sC.settings.state);
+    sC.hasUpdate = false;
   }
 
   // do stuff
@@ -94,9 +93,9 @@ void loop() {
 void switchState(systemState state) {
   Serial << F("State.  Changing to ") << state << endl;
   switch ( state ) {
-    case STARTUP: stateMachine.transitionTo(Idle); break;
+    case IDLE: stateMachine.transitionTo(Idle); break;
     case NORMAL: stateMachine.transitionTo(Normal); break;
-    case CENTRAL: stateMachine.transitionTo(Idle); break;
+    case CENTRAL: stateMachine.transitionTo(Central); break;
     case REBOOT: stateMachine.transitionTo(Reboot); break;
     case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
     default:
@@ -104,10 +103,10 @@ void switchState(systemState state) {
   }
 }
 
-void idleUpdate() {
+void idle() {
   // NOP; on hold until we hear from the Coordinator
 }
-void normalUpdate() {
+void normal() {
   /*
      Interleave a FFT compute and publishing between distance updates every 10 ms.
      looks like:
@@ -119,7 +118,7 @@ void normalUpdate() {
   // read ADCs
   if ( ETin.receiveData() ) {
     // ship it
-    commsPublish(distTopic, &dist);
+    comms.publish(&dist);
 
     // fill buffer
     fillBuffer();
@@ -144,12 +143,14 @@ void normalUpdate() {
       // noting that we don't publish on the same loop as a compute
       publishReady = false;
       // publish
-      commsPublish(freqTopic, &freq);
+      comms.publish(&freq);
     }
 
   }
 }
-
+void central() {
+  // NOP
+}
 // storage
 void fillBuffer() {
   // track the buffer index

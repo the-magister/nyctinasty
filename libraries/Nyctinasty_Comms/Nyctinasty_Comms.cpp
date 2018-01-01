@@ -1,122 +1,39 @@
 #include "Nyctinasty_Comms.h"
 
-WiFiClient espClient;
-PubSubClient mqtt;
+// mqtt callback is external to class
+void MQTTCallback(char* topic, byte* payload, unsigned int length);
 
-// save
-String myID, otaID;
-byte myLED;
-boolean ledState = false;
-boolean ledOnState = false;
+#define BUILTIN_LED_ON_STATE LOW
+void setOnLED();
+void setOffLED();
+void toggleLED();
 
-const byte maxTopics = 32;
-byte nTopics = 0;
-String subTopic[maxTopics];
-void * subStorage[maxTopics];
-boolean * subUpdate[maxTopics];
-byte subQoS[maxTopics];
+// helpful decodes for the humans.
+const String NyctRoleString[] = {
+	"Distance",
+	"Frequency",
+	"Light",
+	"Sound",
+	"Fx-Simon",
+	"Coordinator"
+};
 
-Id getIdEEPROM(boolean resetRole) {
-	Id id;
-	EEPROM.begin(512);
-	EEPROM.get(0, id);
-	
-	if( resetRole || id.checksum != 8675309) {
-		// Yikes.  Fresh uC with no information on its role in life.  
-		setOnLED();
+// public methods
 
-		// bootstrap
-		id.checksum = 8675309;
-		Serial << F("*** No role information in EEPROM ***") << endl;
-		
-		Serial.setTimeout(10);
-		
-		Serial << F("Enter Role. ") << endl;
-		while(! Serial.available()) yield();
-		String m = Serial.readString();
-		m.toCharArray(id.role, sizeof(id.role));
-		
-		Serial << F("Enter Sepal. ") << N_SEPALS << F(" for N/A.") << endl;
-		while(! Serial.available()) yield();
-		m = Serial.readString();
-		id.sepal = (byte)m.toInt();
-		
-		Serial << F("Enter Arch. ") << N_ARCHES << F(" for N/A.") << endl;
-		while(! Serial.available()) yield();
-		m = Serial.readString();
-		id.arch = (byte)m.toInt();
-		
-		putIdEEPROM(id);
-	} else {
-		Serial << F("from EEPROM.");
-		Serial << F(" role=") << id.role;
-		Serial << F(" sepal=") << id.sepal;
-		Serial << F(" arch=") << id.arch;
-		Serial << F(" checksum=") << id.checksum;
-		Serial << endl;
-	}
-	
-	EEPROM.end();
-
-	return( id );
-}
-void putIdEEPROM(Id id) {
-	Serial << F("to EEPROM.");
-	Serial << F(" role=") << id.role;
-	Serial << F(" sepal=") << id.sepal;
-	Serial << F(" arch=") << id.arch;
-	Serial << F(" checksum=") << id.checksum;
-	Serial << endl;
-
-	EEPROM.put(0, id);
-}
-
-
-/*
-Project:	nyc
-	Role: 		Coordinator, Frequency, Light, Sound, Fx, UI
-		Sepal:		0-2
-			Arch:		0-2
-*/
-
-// ID and topics
-String commsIdSepalArchFrequency(byte s, byte a) { return commsStringConstructor("Frequency", s, a); }
-String commsIdSepalCoordinator(byte s) { return commsStringConstructor("Coordinator", s, N_ARCHES); }
-String commsIdSepalArchLight(byte s, byte a) { return commsStringConstructor("FxSimon", s, a); }
-String commsIdFlowerSimonBridge() { return commsStringConstructor("Fx-Simon"); }
-
-// subscription topics
-// note that wildcards are not supported, as we use string matching to determine incoming messages
-String commsTopicSystemCommand() { return commsStringConstructor("Settings"); }
-String commsTopicLight(byte s, byte a) { return commsStringConstructor("Light", s, a); }
-String commsTopicDistance(byte s, byte a) { return commsStringConstructor("Dist", s, a); }
-String commsTopicFrequency(byte s, byte a) { return commsStringConstructor("Freq", s, a); }
-String commsTopicFxSimon() { return commsStringConstructor("Fx/Simon"); }
-
-String commsStringConstructor(String topic, byte sepalNumber, byte archNumber) {
-	const String project = "nyc";
-	const String sep = "/";
-	
-	String sepal = (sepalNumber < N_SEPALS) ? ( sep + String(sepalNumber,10) ) : "";
-	String arch = (archNumber < N_ARCHES && sepalNumber < N_SEPALS) ? ( sep + String(archNumber,10) ) : "";
-
-	String sub = project + sep + topic + sepal + arch;
-//	Serial << sub << endl;
-	return sub;
-}
-
-Id commsBegin(boolean resetRole, byte ledPin) {
-	Serial << "Startup. commsBegin starts." << endl;
+void NyctComms::begin(NyctRole role, boolean resetRole) {
+	Serial << F("Startup. commsBegin starts.") << endl;
 
 	// prep the LED
-	myLED = ledPin;
-	pinMode(myLED, OUTPUT);
-	toggleLED();
-	setOffLED();
+	pinMode(BUILTIN_LED, OUTPUT);
+	digitalWrite(BUILTIN_LED, !BUILTIN_LED_ON_STATE);
 
 	// figure out who I am.
-	Id id = getIdEEPROM(resetRole);
-	
+	this->role = role;
+	getsetEEPROM(this->role, resetRole);
+	String s = (this->sepal == N_SEPAL) ? "" : ("-" + String(this->sepal, 10) );
+	String a = (this->arch == N_ARCH) ? "" : ("-" + String(this->arch, 10) );
+	myName = "nyc-" + NyctRoleString[this->role] + s + a;
+
 	// comms setup
 	if( WiFi.status()==WL_CONNECTED ) WiFi.disconnect();
 	
@@ -132,19 +49,11 @@ Id commsBegin(boolean resetRole, byte ledPin) {
 	WiFi.mode(WIFI_STA);
 #endif 
 
-	myID = commsStringConstructor(id.role, id.sepal, id.arch);
-	otaID = id.role;
-	otaID.replace("/","-");
-	Serial << F("Startup. MQTT id=") << otaID << endl;
-	
-	mqtt.setClient(espClient);
-	mqtt.setCallback(commsCallback);
-
-	// enable OTA pull programming.  reboots after a new payload.
-	ESPhttpUpdate.rebootOnUpdate(true);
+	mqtt.setClient(wifi);
+	mqtt.setCallback(MQTTCallback);
 
 	// enable OTA push programming, too.
-	ArduinoOTA.setHostname(otaID.c_str());
+	ArduinoOTA.setHostname(myName.c_str());
 	ArduinoOTA.onStart([]() {
 		Serial.println("Start");
 	});
@@ -165,50 +74,219 @@ Id commsBegin(boolean resetRole, byte ledPin) {
 	});
 	
 	
-	Serial << "Startup. commsBegin ends." << endl;
-	
-	return( id );
+	Serial << F("Startup. commsBegin ends.") << endl;
+}
+// subscriptions. cover the messages in Nyctinasty_Messages.h
+const String settingsString = "nyc/Setting";
+const String distanceString = "nyc/Distance";
+const String frequencyString = "nyc/Frequency";
+const String simonString = "nyc/Fx/Simon";
+const String sep = "/";
+void NyctComms::subscribe(SystemCommand *storage, boolean *trueWithUpdate) {
+	subscribe(
+		settingsString, 
+		(void *)storage, trueWithUpdate, 1
+	);
+}
+void NyctComms::subscribe(SimonSystemState *storage, boolean *trueWithUpdate) {
+	subscribe(
+		simonString, 
+		(void *)storage, trueWithUpdate, 0
+	);
+}
+void NyctComms::subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t archNumber) {
+	String s = String( (sepalNumber == MY_INDEX) ? this->sepal : sepalNumber, 10 );
+	String a = String( (archNumber == MY_INDEX) ? this->arch : archNumber, 10 );
+	subscribe(
+		distanceString + sep + s + sep + a, 
+		(void *)storage, trueWithUpdate, 0
+	);
+}
+void NyctComms::subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t archNumber) {
+	String s = String( (sepalNumber == MY_INDEX) ? this->sepal : sepalNumber, 10 );
+	String a = String( (archNumber == MY_INDEX) ? this->arch : archNumber, 10 );
+	subscribe(
+		frequencyString + sep + s + sep + a, 
+		(void *)storage, trueWithUpdate, 0
+	);
 }
 
-void setOnLED() {
-	if( ledState!=ledOnState ) toggleLED();
+// publications.  cover the messages in Nyctinasty_Messages.h
+boolean NyctComms::publish(SimonSystemState *storage) {
+	return publish(
+		simonString, 
+		(uint8_t *)storage, (unsigned int)sizeof(SimonSystemState)
+	);
 }
-void setOffLED() {
-	if( ledState==ledOnState ) toggleLED();
+boolean NyctComms::publish(SystemCommand *storage) {
+	return publish(
+		settingsString, 
+		(uint8_t *)storage, (unsigned int)sizeof(SystemCommand)
+	);
 }
-void toggleLED() {
-	// toggle the LED when we process a message
-	ledState = !ledState;
-	digitalWrite(myLED, ledState);
+boolean NyctComms::publish(SepalArchDistance *storage, uint8_t sepalNumber, uint8_t archNumber) {
+	String s = String( (sepalNumber == MY_INDEX) ? this->sepal : sepalNumber, 10 );
+	String a = String( (archNumber == MY_INDEX) ? this->arch : archNumber, 10 );
+	return publish(
+		distanceString + sep + s + sep + a, 
+		(uint8_t *)storage, (unsigned int)sizeof(SepalArchDistance)
+	);
+}
+boolean NyctComms::publish(SepalArchFrequency *storage, uint8_t sepalNumber, uint8_t archNumber) {
+	String s = String( (sepalNumber == MY_INDEX) ? this->sepal : sepalNumber, 10 );
+	String a = String( (archNumber == MY_INDEX) ? this->arch : archNumber, 10 );
+	return publish(
+		frequencyString + sep + s + sep + a, 
+		(uint8_t *)storage, (unsigned int)sizeof(SepalArchFrequency)
+	);
 }
 
-boolean commsConnected() {
-	(mqtt.connected()==true) && (WiFi.status()==WL_CONNECTED);
-}
-
-void commsUpdate() {
+// call this very frequently
+void NyctComms::update() {
 	if (WiFi.status() != WL_CONNECTED) {
 		connectWiFi();
 	} else if (!mqtt.connected()) {
-		connectMQTT();
+		connectServices();
 	} else {
 		mqtt.loop(); // look for a message
 		ArduinoOTA.handle(); // see if we need to reprogram
 	}
 }
+// check connection
+boolean NyctComms::isConnected() {
+	return (mqtt.connected()==true) && (WiFi.status()==WL_CONNECTED);
+}
+
+// useful functions.
+void NyctComms::reboot() {
+	setOnLED();
+
+	Serial << endl << F("*** REBOOTING ***") << endl;
+	delay(100);
+	ESP.restart();
+}
+void NyctComms::reprogram(String binaryName) {
+	setOnLED();
+	
+	String updateURL = "http://192.168.4.1:80/images/" + binaryName;
+	Serial << endl << F("*** RELOADING ***") << endl;
+	Serial << F("Getting payload from: ") << updateURL << endl;
+
+	delay(random(10, 500)); // so we all don't hit the server at the same time.
+
+	// enable OTA pull programming.  do not reboot after programming.
+	ESPhttpUpdate.rebootOnUpdate(false);
+
+	t_httpUpdate_return ret = ESPhttpUpdate.update(updateURL.c_str());
+
+	switch (ret) {
+		case HTTP_UPDATE_FAILED:
+			Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\n", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
+			break;
+
+		case HTTP_UPDATE_NO_UPDATES:
+			Serial.println("HTTP_UPDATE_NO_UPDATES");
+			// now reboot
+			reboot();
+			break;
+
+		case HTTP_UPDATE_OK:
+			Serial.println("HTTP_UPDATE_OK");
+			// now reboot
+			reboot();
+			break;
+	}
+}
+byte NyctComms::getSepal() { return this->sepal; }
+byte NyctComms::getArch() { return this->arch; }
+
+// private methods
+
+typedef struct {
+	NyctRole role; 
+	byte sepal;
+	byte arch;
+	char wifiPassword[20];
+} EEPROMstruct;
+
+void NyctComms::getsetEEPROM(NyctRole role, boolean resetRole) {
+	EEPROMstruct save;
+	EEPROM.begin(512);
+	EEPROM.get(0, save);
+	
+	if( resetRole || save.role != role) {
+		// Yikes.  Fresh uC with no information on its role in life.  
+		setOnLED();
+
+		// bootstrap
+		Serial << F("*** No role information in EEPROM ***") << endl;
+		
+		Serial.setTimeout(10);
+		
+		Serial << F("Enter Role. ") << endl;
+		NyctRole n = N_ROLES;
+		for( byte i=0; i<n; i++ ) {
+			Serial << F("  ") << i << "=" << NyctRoleString[i] << endl;
+		}
+		while(! Serial.available()) yield();
+		String m = Serial.readString();
+		save.role = (NyctRole)m.toInt();
+		
+		Serial << F("Enter Sepal [0-2], ") << N_SEPAL << F(" for N/A.") << endl;
+		while(! Serial.available()) yield();
+		m = Serial.readString();
+		save.sepal = (byte)m.toInt();
+		
+		Serial << F("Enter Arch [0-2], ") << N_ARCH << F(" for N/A.") << endl;
+		while(! Serial.available()) yield();
+		m = Serial.readString();
+		save.arch = (byte)m.toInt();
+
+		Serial << F("Enter WiFi Password. ") << endl;
+		while(! Serial.available()) yield();
+		m = Serial.readString();
+		m.toCharArray(save.wifiPassword, sizeof(save.wifiPassword));
+	
+		EEPROM.put(0, save);
+	} 
+
+	EEPROM.end();
+
+	this->role = save.role;
+	this->sepal = save.sepal;
+	this->arch = save.arch;
+	this->wifiPassword = save.wifiPassword;
+	
+	Serial << F("Role information in EEPROM:");
+	Serial << F(" role=") << this->role;
+	Serial << F(" (") << NyctRoleString[this->role] << F(")");
+	Serial << F(" sepal=") << this->sepal;
+	Serial << F(" arch=") << this->arch;
+	Serial << F(" wifiPassword=") << this->wifiPassword;
+	Serial << endl;
+
+}
+
+// memory maintained outside of the class.  :(
+
+byte MQTTnTopics = 0;
+String MQTTsubTopic[MQTT_MAX_SUBSCRIPTIONS];
+void * MQTTsubStorage[MQTT_MAX_SUBSCRIPTIONS];
+boolean * MQTTsubUpdate[MQTT_MAX_SUBSCRIPTIONS];
+byte MQTTsubQoS[MQTT_MAX_SUBSCRIPTIONS];
 
 // the real meat of the work is done here, where we process messages.
-void commsCallback(char* topic, byte* payload, unsigned int length) {
+void MQTTCallback(char* topic, byte* payload, unsigned int length) {
 
 	// String class is much easier to work with
 	String t = topic;
 	
 	// run through topics we're subscribed to
-	for( byte i=0;i < nTopics;i++ ) {
-		if( t.equals(subTopic[i]) ) {
+	for( byte i=0;i < MQTTnTopics;i++ ) {
+		if( t.equals(MQTTsubTopic[i]) ) {
 			// copy memory
-			memcpy( subStorage[i], (void*)payload, length );
-			*subUpdate[i] = true;
+			memcpy( MQTTsubStorage[i], (void*)payload, length );
+			*MQTTsubUpdate[i] = true;
 			
 			// toggle the LED when we GET a new message
 			toggleLED();
@@ -218,22 +296,22 @@ void commsCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 // subscribe to a topic
-void commsSubscribe(String topic, void * storage, boolean * updateFlag, uint8_t QoS) {
+void NyctComms::subscribe(String topic, void * storage, boolean * updateFlag, uint8_t QoS) {
 	// check to see if we've execeed the buffer size
-	if( nTopics >= maxTopics ) {
-		Serial << F("Increase Nyctinasty_Comms.cpp maxTopics!!!  Halting.") << endl;
+	if( MQTTnTopics >= MQTT_MAX_SUBSCRIPTIONS ) {
+		Serial << F("Increase Nyctinasty_Comms.h MQTT_MAX_SUBSCRIPTIONS!!!  Halting.") << endl;
 		while(1) yield();
 	}
 	// queue subscriptions.  actual subscriptions happen at every (re)connect to the broker.
-	subTopic[nTopics] = topic;
-	subStorage[nTopics] = storage;
-	subUpdate[nTopics] = updateFlag; 
-	subQoS[nTopics] = QoS;
-	nTopics++;
+	MQTTsubTopic[MQTTnTopics] = topic;
+	MQTTsubStorage[MQTTnTopics] = storage;
+	MQTTsubUpdate[MQTTnTopics] = updateFlag; 
+	MQTTsubQoS[MQTTnTopics] = QoS;
+	MQTTnTopics++;
 }
 
 // publish to a topic
-boolean commsPublish(String topic, uint8_t * msg, unsigned int msgBytes) {
+boolean NyctComms::publish(String topic, uint8_t * msg, unsigned int msgBytes) {
 	// bit of an edge case, but let's check
 	if( msgBytes >= MQTT_MAX_PACKET_SIZE ) {
 		Serial << F("Increase PubSubClient.h MQTT_MAX_PACKET_SIZE >") << msgBytes << endl;;
@@ -241,15 +319,17 @@ boolean commsPublish(String topic, uint8_t * msg, unsigned int msgBytes) {
 		while(1) yield();
 	}
 	// bail out if we're not connected
-	if( !commsConnected() ) return( false );
+	if( !this->isConnected() ) return( false );
 	// toggle the LED when we send a new message
 	toggleLED();
 	// ship it
 	return mqtt.publish(topic.c_str(), msg, msgBytes);
 }
 
+
+
 // connect to the WiFi
-void connectWiFi(String ssid, String passwd, unsigned long interval) {
+void NyctComms::connectWiFi(String ssid, unsigned long interval) {
 	static Metro connectInterval(interval);
 	static byte retryCount = 0;
 	
@@ -259,9 +339,9 @@ void connectWiFi(String ssid, String passwd, unsigned long interval) {
 		retryCount++;
 		
 		Serial << F("WiFi status=") << WiFi.status();
-		Serial << F("\tAttempting WiFi connection to ") << ssid << F(" password ") << passwd << endl;
+		Serial << F("\tAttempting WiFi connection to ") << ssid << F(" password ") << this->wifiPassword << endl;
 		// Attempt to connect
-		WiFi.begin(ssid.c_str(), passwd.c_str());
+		WiFi.begin(ssid.c_str(), this->wifiPassword.c_str());
 		
 		connectInterval.reset();
 	}
@@ -269,8 +349,8 @@ void connectWiFi(String ssid, String passwd, unsigned long interval) {
 	if( retryCount >= 10 ) reboot();
 }
 
-// connect to MQTT broker
-void connectMQTT(String broker, word port, unsigned long interval) {
+// connect to MQTT broker and other services
+void NyctComms::connectServices(String broker, word port, unsigned long interval) {
 	static Metro connectInterval(interval);
 	static byte retryCount = 0;
 
@@ -278,28 +358,28 @@ void connectMQTT(String broker, word port, unsigned long interval) {
 
 		retryCount++;
 
-		if ( MDNS.begin ( otaID.c_str() ) ) {
-			Serial << F("mDNS responder started: ") << otaID << endl;
+		if ( MDNS.begin ( myName.c_str() ) ) {
+			Serial << F("mDNS responder started: ") << myName << endl;
 		} else {
-			Serial << F("Could NOT start MDNS!") << endl;
+			Serial << F("Could NOT start mDNS!") << endl;
 		}
 		
-		Serial << F("OTA started: ") << otaID << endl;
+		Serial << F("OTA started: ") << myName << endl;
 		ArduinoOTA.begin();
 		
-		Serial << F("Attempting MQTT connection as ") << otaID << " to " << broker << ":" << port << endl;
+		Serial << F("Attempting MQTT connection as ") << myName << " to " << broker << ":" << port << endl;
 		mqtt.setServer(broker.c_str(), port);
 
 		// Attempt to connect
-		if (mqtt.connect(otaID.c_str())) {
+		if (mqtt.connect(myName.c_str())) {
 			Serial << F("Connected.") << endl;
 
 			// (re)subscribe
-			for(byte i=0; i<nTopics; i++) {
-				Serial << F("Subscribing: ") << subTopic[i];
-				Serial << F(" QoS=") << subQoS[i];
+			for(byte i=0; i<MQTTnTopics; i++) {
+				Serial << F("Subscribing: ") << MQTTsubTopic[i];
+				Serial << F(" QoS=") << MQTTsubQoS[i];
 				mqtt.loop(); // in case messages are in.
-				boolean ret = mqtt.subscribe(subTopic[i].c_str(), subQoS[i]);
+				boolean ret = mqtt.subscribe(MQTTsubTopic[i].c_str(), MQTTsubQoS[i]);
 				Serial << F(". OK? ") << ret << endl;
 			}
 			
@@ -316,38 +396,112 @@ void connectMQTT(String broker, word port, unsigned long interval) {
 	if( retryCount >= 10 ) reboot();
 }
 
+
+boolean ledState = !BUILTIN_LED_ON_STATE;
+void setOnLED() {
+	if( ledState!=BUILTIN_LED_ON_STATE ) toggleLED();
+}
+void setOffLED() {
+	if( ledState==BUILTIN_LED_ON_STATE ) toggleLED();
+}
+void toggleLED() {
+	// toggle the LED when we process a message
+	ledState = !ledState;
+	digitalWrite(BUILTIN_LED, ledState);
+}
+
+
+/*
+
+
+// save
+String myID, otaID;
+
+
+
+	// subscribe to a topic, provide storage for the payload, provide a flag for update indicator. I considered the use of a callback function, but the FSM context suggests that the message handling should reference the FSM state, which would yield branching logic in the handler anyway.
+	template <class T>
+	void commsSubscribe(String topic, T * msg, boolean * updateFlag, uint8_t QoS=0) {
+		commsSubscribe(topic, (void *)msg, updateFlag, QoS);
+	}
+
+	// publish to a topic
+	template <class T>
+	boolean commsPublish(String topic, T * msg) {
+		return commsPublish(topic, (uint8_t *)msg, (unsigned int)sizeof(T));
+	}
+
+
+	// some led accessors
+	// work
+
+
+	void getEEPROM();
+	void putEEPROM();
+
+	void commsSubscribe(String topic, void * msg, boolean * updateFlag, uint8_t QoS);
+	boolean commsPublish(String topic, uint8_t * msg, unsigned int msgBytes);
+
+	// don't need to mess with these
+	void connectWiFi(String ssid="GamesWithFire", String passwd="safetythird", unsigned long interval=5000UL);
+	void connectServices(String broker="192.168.4.1", word port=1883, unsigned long interval=500UL);
+
+
+
+
+// build an MQTT id, which must be unique.
+String commsIdSepalArchFrequency(byte sepalNumber, byte archNumber);
+String commsIdSepalCoordinator(byte sepalNumber);
+String commsIdSepalArchLight(byte sepalNumber, byte archNumber);
+String commsIdFlowerSimonBridge();
+
+
+// build a MQTT topic, for use with subscribe and publish routines.
+#define ALL
+String commsTopicSystemCommand();
+String commsTopicLight(byte sepalNumber, byte archNumber);
+String commsTopicDistance(byte sepalNumber, byte archNumber);
+String commsTopicFrequency(byte sepalNumber, byte archNumber);
+String commsTopicFxSimon();
+
+// internal use?
+String commsStringConstructor(String topicOrId, byte sepalNumber=N_SEPALS, byte archNumber=N_ARCHES);
+
+
+// ID and topics
+String commsIdSepalArchFrequency(byte s, byte a) { return commsStringConstructor("Frequency", s, a); }
+String commsIdSepalCoordinator(byte s) { return commsStringConstructor("Coordinator", s, N_ARCHES); }
+String commsIdSepalArchLight(byte s, byte a) { return commsStringConstructor("FxSimon", s, a); }
+String commsIdFlowerSimonBridge() { return commsStringConstructor("Fx-Simon"); }
+
+// subscription topics
+// note that wildcards are not supported, as we use string matching to determine incoming messages
+String commsTopicSystemCommand() { return stringConstructor("Settings"); }
+String commsTopicLight(byte s, byte a) { return stringConstructor("Light", s, a); }
+String commsTopicDistance(byte s, byte a) { return stringConstructor("Dist", s, a); }
+String commsTopicFrequency(byte s, byte a) { return stringConstructor("Freq", s, a); }
+String commsTopicFxSimon() { return stringConstructor("Fx/Simon"); }
+
+String stringConstructor(String topic, byte sepalNumber, byte archNumber) {
+	const String project = "nyc";
+	const String sep = "/";
+	
+	String sepal = (sepalNumber < N_SEPALS) ? ( sep + String(sepalNumber,10) ) : "";
+	String arch = (archNumber < N_ARCHES && sepalNumber < N_SEPALS) ? ( sep + String(archNumber,10) ) : "";
+
+	String sub = project + sep + topic + sepal + arch;
+//	Serial << sub << endl;
+	return sub;
+}
+
 // reboot
 void reboot() {
-	setOnLED();
-
-	Serial << endl << F("*** REBOOTING ***") << endl;
-	delay(100);
-	ESP.restart();
 }
 
 // reprogram
 void reprogram(String binaryName) {
-	setOnLED();
 	
-	String updateURL = "http://192.168.4.1:80/images/" + binaryName;
-	Serial << endl << F("*** RELOADING ***") << endl;
-	Serial << F("Getting payload from: ") << updateURL << endl;
-
-	delay(random(100, 1000)); // so we all don't hit the server at the same time.
-
-	t_httpUpdate_return ret = ESPhttpUpdate.update(updateURL.c_str());
-
-	switch (ret) {
-		case HTTP_UPDATE_FAILED:
-		Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s\n", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
-		break;
-
-		case HTTP_UPDATE_NO_UPDATES:
-		Serial.println("HTTP_UPDATE_NO_UPDATES");
-		break;
-
-		case HTTP_UPDATE_OK:
-		Serial.println("HTTP_UPDATE_OK");
-		break;
-	}
 }
+
+
+*/

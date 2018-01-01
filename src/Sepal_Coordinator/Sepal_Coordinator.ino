@@ -15,21 +15,26 @@ using namespace Eigen;    // simplifies syntax for declaration of matrices
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
 
+// comms
+NyctComms comms;
+
 // define a state for every systemState
-void startupUpdate(); State Startup = State(startupUpdate);
-void normalUpdate(); State Normal = State(normalUpdate);
-void idleUpdate(); State Idle = State(idleUpdate);
-State Reboot = State(reboot);
-void reprogram() {
-  reprogram("Sepal_Coordinator.ino.bin");
-} State Reprogram = State(reprogram);
-FSM stateMachine = FSM(Startup); // initialize state machine
+void idle(); State Idle = State(idle);
+void normal(); State Normal = State(normal);
+void central(); State Central = State(central);
+void reboot() { comms.reboot(); }; State Reboot = State(reboot);
+void reprogram() { comms.reprogram("Sepal_Coordinator.ino.bin"); } State Reprogram = State(reprogram);
+FSM stateMachine = FSM(Idle); // initialize state machine
+
+// my role
+NyctRole role = Coordinator;
 
 // incoming message storage and flag for update
-SystemCommand settings;         boolean settingsUpdate = false;   String settingsTopic;
+struct sC_t { boolean hasUpdate=false; SystemCommand settings; } sC;
 
 // incoming message storage and flag for update
-SepalArchFreq freq[N_ARCHES];   boolean freqUpdate[N_ARCHES] = {false};
+typedef struct { boolean hasUpdate=false; SepalArchFrequency freq; } sAF_t;
+sAF_t sAF[N_ARCH];
 
 // This function sets up the leds and tells the controller about them
 void setup() {
@@ -37,17 +42,13 @@ void setup() {
 
   Serial << endl << endl << endl << F("Startup.") << endl;
 
-  // who am I?
-  Id myId = commsBegin();
-
-  // publish
-  settingsTopic = commsTopicSystemCommand();
-  Serial << F("Publishing: ") << settingsTopic << endl;
+  // start comms
+  comms.begin(role);
 
   // subscribe
-  commsSubscribe(settingsTopic, &settings, &settingsUpdate, 1); // QoS 1
-  for ( byte i = 0; i < N_ARCHES; i++ ) {
-    commsSubscribe(commsTopicFrequency(myId.sepal, i), &freq[i], &freqUpdate[i]);
+  comms.subscribe(&sC.settings, &sC.hasUpdate);
+  for ( byte i = 0; i < N_ARCH; i++ ) {
+    comms.subscribe(&sAF[i].freq, &sAF[i].hasUpdate, comms.getSepal(), i);
   }
 
   Serial << F("Startup. complete.") << endl;
@@ -55,17 +56,17 @@ void setup() {
 
 void loop() {
   // comms handling
-  commsUpdate();
+  comms.update();
 
   // bail out if not connected
-  if ( ! commsConnected() ) return;
+  if ( ! comms.isConnected() ) return;
 
   // order these by priority:
 
   // check for settings update
-  if ( settingsUpdate ) {
-    switchState(settings.state);
-    settingsUpdate = false;
+  if ( sC.hasUpdate ) {
+    switchState(sC.settings.state);
+    sC.hasUpdate = false;
   }
 
   // do stuff
@@ -76,9 +77,9 @@ void loop() {
 void switchState(systemState state) {
   Serial << F("State.  Changing to ") << state << endl;
   switch ( state ) {
-    case STARTUP: stateMachine.transitionTo(Startup); break;
+    case IDLE: stateMachine.transitionTo(Idle); break;
     case NORMAL: stateMachine.transitionTo(Normal); break;
-    case CENTRAL: stateMachine.transitionTo(Idle); break;
+    case CENTRAL: stateMachine.transitionTo(Central); break;
     case REBOOT: stateMachine.transitionTo(Reboot); break;
     case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
     default:
@@ -86,36 +87,35 @@ void switchState(systemState state) {
   }
 }
 
-void startupUpdate() {
+void idle() {
   // As a Coordinator, we're responsible for sending a NORMAL systemState after startup
-  uint32_t startupDelay = 10000UL;
+  uint32_t startupDelay = 3000UL;
   static uint32_t tic = millis();
   if ( millis() < (tic + startupDelay) ) return;
 
   Serial << F("State.  Sending NORMAL...") << endl;
 
-  settings.state = NORMAL;
-  commsPublish(settingsTopic, &settings);
+  sC.settings.state = NORMAL;
+  comms.publish(&sC.settings);
 
   // go to central update while we wait for our subscription to arrive
   stateMachine.transitionTo(Idle);
 }
 
-void idleUpdate() {
-  // NOP; on hold until we hear from the Coordinator
-}
-
-void normalUpdate() {
+void normal() {
   // check for an update to frequency
-  for ( byte i = 0; i < N_ARCHES; i++ ) {
-    if ( freqUpdate[i] ) {
+  for ( byte i = 0; i < N_ARCH; i++ ) {
+    if ( sAF[i].hasUpdate ) {
       Serial << F("freqUpdate ") << i << endl;
       // reset
-      freqUpdate[i] = false;
+      sAF[i].hasUpdate = false;
     }
   }
 }
 
+void central() {
+  // NOP
+}
 /*
   void distUpdate0() { distUpdate(0); }
   void distUpdate1() { distUpdate(1); }

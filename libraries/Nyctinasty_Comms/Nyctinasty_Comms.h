@@ -23,72 +23,75 @@
 #include <PubSubClient.h>
 
 #include "Nyctinasty_Messages.h"
+#include "Simon_Common.h"
 
-typedef struct {
-	char role[20]; // very important to NOT use String (doesn't have a defined length)
-	byte sepal={N_SEPALS};
-	byte arch={N_ARCHES};
+// roles for each microcontroller
+enum NyctRole {
+  Distance=0, 
+  Frequency=1,
+  Light=2,
+  Sound=3,
+  FxSimon=4,
+  Coordinator=5,
+  
+  N_ROLES=6
+};
+
+// how many subscription topics should we malloc() for?
+#define MQTT_MAX_SUBSCRIPTIONS 32
+
+// during publishing and subscribing, we can use a short-hand of "my sepal and arch".
+#define MY_INDEX 99
+
+// prosecute communications
+class NyctComms {
+public:
+
+	// startup. 
+	void begin(NyctRole role, boolean resetRole=false);
+
+	// subscriptions. cover the messages in Nyctinasty_Messages.h
+	void subscribe(SystemCommand *storage, boolean *trueWithUpdate);
+	void subscribe(SimonSystemState *storage, boolean *trueWithUpdate);
+	void subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t sepalNumber=MY_INDEX, uint8_t archNumber=MY_INDEX);
+	void subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t sepalNumber=MY_INDEX, uint8_t archNumber=MY_INDEX);
 	
-	uint32_t checksum = 8675309; // don't lose my number
-} Id;
-
-Id getIdEEPROM();
-void putIdEEPROM(Id id);
-
-// call this very frequently
-void commsUpdate();
-
-// check connection
-boolean commsConnected(); 
-
-// don't need to mess with these
-void connectWiFi(String ssid="GamesWithFire", String passwd="safetythird", unsigned long interval=5000UL);
-void connectMQTT(String broker="192.168.4.1", word port=1883, unsigned long interval=500UL);
-void commsCallback(char* topic, byte* payload, unsigned int length);
-void commsSubscribe(String topic, void * msg, boolean * updateFlag, uint8_t QoS);
-boolean commsPublish(String topic, uint8_t * msg, unsigned int msgBytes);
-void setOnLED();
-void setOffLED();
-void toggleLED();
-
-// build an MQTT id, which must be unique.
-String commsIdSepalArchFrequency(byte sepalNumber, byte archNumber);
-String commsIdSepalCoordinator(byte sepalNumber);
-String commsIdSepalArchLight(byte sepalNumber, byte archNumber);
-String commsIdFlowerSimonBridge();
-
-// startup.  use unique id that's built by the commsId* helpers. 
-Id commsBegin(boolean resetRole=false, byte ledPin=BUILTIN_LED);
-
-// build a MQTT topic, for use with subscribe and publish routines.
-#define ALL
-String commsTopicSystemCommand();
-String commsTopicLight(byte sepalNumber, byte archNumber);
-String commsTopicDistance(byte sepalNumber, byte archNumber);
-String commsTopicFrequency(byte sepalNumber, byte archNumber);
-String commsTopicFxSimon();
-
-// internal use?
-String commsStringConstructor(String topicOrId, byte sepalNumber=N_SEPALS, byte archNumber=N_ARCHES);
-
-// subscribe to a topic, provide storage for the payload, provide a flag for update indicator
-// I considered the use of a callback function, but the FSM context suggests that the 
-// message handling should reference the FSM state, which would yield branching logic
-// in the handler anyway.
-template <class T>
-void commsSubscribe(String topic, T * msg, boolean * updateFlag, uint8_t QoS=0) {
-	commsSubscribe(topic, (void *)msg, updateFlag, QoS);
-}
-
-// publish to a topic
-template <class T>
-boolean commsPublish(String topic, T * msg) {
-	return commsPublish(topic, (uint8_t *)msg, (unsigned int)sizeof(T));
-}
-
-// useful functions
-void reboot();
-void reprogram(String binaryName);
+	// publications.  cover the messages in Nyctinasty_Messages.h
+	boolean publish(SystemCommand *message);
+	boolean publish(SimonSystemState *message);
+	boolean publish(SepalArchDistance *message, uint8_t sepalNumber=MY_INDEX, uint8_t archNumber=MY_INDEX);
+	boolean publish(SepalArchFrequency *message, uint8_t sepalNumber=MY_INDEX, uint8_t archNumber=MY_INDEX);
+	
+	// call this very frequently
+	void update();
+	// check connection
+	boolean isConnected(); 
+	
+	// useful functions.
+	void reboot();
+	void reprogram(String binaryName);
+	byte getSepal();
+	byte getArch();
+	
+private:
+	// role and indexing
+	NyctRole role;
+	uint8_t sepal, arch;
+	void getsetEEPROM(NyctRole role, boolean resetRole);
+	
+	// WiFi
+	WiFiClient wifi;
+	String wifiPassword; // get it from EEPROM
+	void connectWiFi(String ssid="GamesWithFire", unsigned long interval=5000UL);
+	
+	// MQTT
+	PubSubClient mqtt;
+	String myName;
+	void connectServices(String broker="192.168.4.1", word port=1883, unsigned long interval=500UL);
+	void subscribe(String topic, void * storage, boolean * updateFlag, uint8_t QoS);
+	boolean publish(String topic, uint8_t * msg, unsigned int msgBytes);
+	
+};
 
 #endif
 

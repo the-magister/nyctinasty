@@ -8,9 +8,13 @@
 #include <Metro.h>
 #include <FiniteStateMachine.h>
 #include <RFM69.h>
+#include <FastLED.h>
 #include "Nyctinasty_Messages.h"
-#include "Nyctinasty_Comms.h"
 #include "Simon_Common.h"
+#include "Nyctinasty_Comms.h"
+
+// comms
+NyctComms comms;
 
 // wire it up
 // Mini -> RFM69 board
@@ -29,17 +33,19 @@
 RFM69 radio;
 
 // define a state for every systemState
-void idleUpdate(); State Idle = State(idleUpdate);
-void normalUpdate(); State Normal = State(normalUpdate);
-State Reboot = State(reboot);
-void reprogram() {
-  reprogram("Flower_Simon_Bridge.ino.bin");
-}; State Reprogram = State(reprogram);
+void idle(); State Idle = State(idle);
+void normal(); State Normal = State(normal);
+void central(); State Central = State(central);
+void reboot() { comms.reboot(); }; State Reboot = State(reboot);
+void reprogram() { comms.reprogram("Flower_Simon_Bridge.ino.bin"); } State Reprogram = State(reprogram);
 FSM stateMachine = FSM(Idle); // initialize state machine
 
+// my role
+NyctRole role = FxSimon;
+
 // incoming message storage and flag for update
-SystemCommand settings;     boolean settingsUpdate = false;
-SimonSystemState simonMessage;  boolean simonUpdate = false;
+struct sC_t { boolean hasUpdate=false; SystemCommand settings; } sC;
+struct sM_t { boolean hasUpdate=false; SimonSystemState simonMessage; } sM;
 
 void setup() {
   // for local output
@@ -47,18 +53,13 @@ void setup() {
 
   Serial << endl << endl << endl << F("Startup.") << endl;
 
-  // who am I?
-  Id myId = commsBegin();
-  // subscriptions
-  commsSubscribe(commsTopicSystemCommand(), &settings, &settingsUpdate, 1); // QoS 1
-  commsSubscribe(commsTopicFxSimon(), &simonMessage, &simonUpdate); 
+  // start comms
+  comms.begin(role);
 
-  Serial << F("Startup. Initializing WiFi radio.") << endl;
-  connectWiFi();
-  delay(10000);
-  connectMQTT("192.168.3.1");
-  delay(3000);
-  
+  // subscriptions
+  comms.subscribe(&sC.settings, &sC.hasUpdate);
+  comms.subscribe(&sM.simonMessage, &sM.hasUpdate);
+
   Serial << F("Startup. Initializing RFM69HW radio.") << endl;
   radioInitialize();
 
@@ -67,15 +68,15 @@ void setup() {
 
 void loop() {
   // comms handling
-  commsUpdate();
+  comms.update();
 
   // bail out if not connected
-  if ( ! commsConnected() ) return;
+  if ( ! comms.isConnected() ) return;
 
   // check for settings update
-  if ( settingsUpdate ) {
-    switchState(settings.state);
-    settingsUpdate = false;
+  if ( sC.hasUpdate ) {
+    switchState(sC.settings.state);
+    sC.hasUpdate = false;
   }
 
   // radio handling
@@ -90,9 +91,9 @@ void loop() {
 void switchState(systemState state) {
   Serial << F("State.  Changing to ") << state << endl;
   switch ( state ) {
-    case STARTUP: stateMachine.transitionTo(Idle); break;
+    case IDLE: stateMachine.transitionTo(Idle); break;
     case NORMAL: stateMachine.transitionTo(Normal); break;
-    case CENTRAL: stateMachine.transitionTo(Normal); break;
+    case CENTRAL: stateMachine.transitionTo(Central); break;
     case REBOOT: stateMachine.transitionTo(Reboot); break;
     case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
     default:
@@ -100,7 +101,7 @@ void switchState(systemState state) {
   }
 }
 
-void idleUpdate() {
+void idle() {
   // dick around with the lighting 
   static Metro sendInterval(25UL);
   if( sendInterval.check() ) {
@@ -112,9 +113,9 @@ void idleUpdate() {
       CRGB color = CHSV(hue[i], 255, 255);
  
       // set in message
-      simonMessage.light[i].red = color.red;
-      simonMessage.light[i].green = color.green;
-      simonMessage.light[i].blue = color.blue;
+      sM.simonMessage.light[i].red = color.red;
+      sM.simonMessage.light[i].green = color.green;
+      sM.simonMessage.light[i].blue = color.blue;
     }
     
     // flame effects
@@ -123,31 +124,31 @@ void idleUpdate() {
     newFire.effect = constrain(veryLean, veryRich, veryLean);
 
     // set in message
-    simonMessage.fire[0] = newFire;
-    simonMessage.fire[1] = newFire;
-    simonMessage.fire[2] = newFire;
+    sM.simonMessage.fire[0] = newFire;
+    sM.simonMessage.fire[1] = newFire;
+    sM.simonMessage.fire[2] = newFire;
 
     // ship it
     radioSend();
     sendInterval.reset();
   }
 }
-void normalUpdate() {
+void normal() {
   // look for messages and serve as a bridge
 
   // packets get dropped.  we resend on an interval
   static Metro sendInterval(25UL);
 
   static byte packetNumber = 255;
-  if( simonUpdate ) {
+  if( sM.hasUpdate ) {
     packetNumber ++;
-    simonMessage.packetNumber = packetNumber;
+    sM.simonMessage.packetNumber = packetNumber;
   
     // ship it
     radioSend();
     sendInterval.reset();
     
-    simonUpdate = false;
+    sM.hasUpdate = false;
   }
 
   if( sendInterval.check() ) {
@@ -157,11 +158,15 @@ void normalUpdate() {
   }
 }
 
+void central() { 
+  normal(); 
+}
+
 void radioSend() {
   const systemMode sMode = EXTERN;
-  simonMessage.mode = (byte)sMode;
+  sM.simonMessage.mode = (byte)sMode;
 
-  radio.send((byte)BROADCAST, (const void*)(&simonMessage), sizeof(SimonSystemState), false);  
+  radio.send((byte)BROADCAST, (const void*)(&sM.simonMessage), sizeof(SimonSystemState), false);  
 }
 
 void radioReset() {
