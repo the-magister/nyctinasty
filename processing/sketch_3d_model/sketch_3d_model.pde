@@ -24,6 +24,9 @@ static final int N_SENSOR = 8;
 static final int N_ARCH = 3;
 static final int N_SEPAL = 3;
 
+// a human for reference
+PShape david;
+
 void settings() {
   // size based on object
   size(canvasSize, canvasSize, P3D);
@@ -34,6 +37,12 @@ void setup() {
   print(" legS2=", legS2/pxPerFt);
   print(" legAng=", degrees(legAng));
   println();
+  
+  david = loadShape("scan-the-world-michelangelo-s-david - reduced.obj");
+//  david.scale(0.5);
+  david.rotateZ(radians(180));
+  david.scale(1.0/2.9);
+//  println("david height=", david.height()/pxPerFt);
 }
 
 // https://processing.org/tutorials/p3d/
@@ -45,16 +54,16 @@ void draw() {
   // camera settings
   lights();
   
-  //  camera(width/2.0, height/2.0, (height/2.0) / tan(PI*30.0 / 180.0), width/2.0, height/2.0, 0, 0, 1, 0); // defaults
-//  camera(width/2, height/2*3, (height/2.0) / tan(PI*60.0 / 180.0), width/2.0, height/2.0, 0, 0, 1, 0);
+//  camera(width/2.0, height/2.0, (height/2.0) / tan(PI*30.0 / 180.0), width/2.0, height/2.0, 0, 0, 1, 0); // defaults
+  camera(width/2, height/2*3, (height/2.0) / tan(PI*60.0 / 180.0), width/2.0, height/2.0, 0, 0, 1, 0);
  
 //  camera(width/2, height/2, (height/2.0) / tan(PI*60.0 / 180.0), width/2.0, height/2.0, 0, 0, 1, 0);
 
 //  camera(width/2, height/2*4, (height/2.0) / tan(PI*60.0 / 180.0), width/2.0, height/2.0, 0, 0, 1, 0);
 
- ortho(-width/2.0, width/2.0, -height/2.0, height/2.0);
-//  float cameraZ = ((height/2/2.0) / tan(PI*60.0/360.0)); // defaults
-//  perspective(PI/3.0, width/height, cameraZ/10.0, cameraZ*10.0); // defaults
+//  ortho(-width/2.0, width/2.0, -height/2.0, height/2.0);
+  float cameraZ = ((height/2/2.0) / tan(PI*60.0/360.0)); // defaults
+  perspective(PI/3.0, width/height, cameraZ/10.0, cameraZ*10.0); // defaults
  
   // set (0,0) in the center
   translate(width/2, height/2, 0);
@@ -62,6 +71,12 @@ void draw() {
   // denote extents and boundaries with dark lines
   noFill();
   stroke(64);
+
+  // use David as a reference.  
+  pushMatrix();
+  translate(0, +perimRadius, -deckHeight);
+  shape(david);
+  popMatrix();
 
   // show outlines
   drawOutlines();
@@ -82,8 +97,8 @@ void draw() {
   drawSail();
   
   // save it
-  save("Plan orthosteric.png");
-  exit();
+//  save("Plan orthosteric.png");
+//  exit();
 }
 
 void drawSail() {
@@ -94,7 +109,7 @@ void drawLeg(boolean isUp) {
   
   float angle =  radians(90)-legAng; 
   if( isUp ) angle = legAng-radians(90);
-  
+
   pushMatrix();
 
   translate(0, +deckLength/2, 0);
