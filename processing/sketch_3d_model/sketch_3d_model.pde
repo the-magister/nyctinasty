@@ -9,33 +9,37 @@ static final int canvasSize = 50*pxPerFt; // show a 55'x55' area as canvas
 static final float perimRadius = 32/2*pxPerFt; // center of sepal placement on circle with this radius
 static final float flowerRadius = 6*pxPerFt; // footprint of the centerpiece
 
+// thickness for extrusions
+static final float deckThick = 5.5/12.0*pxPerFt; // 2x6 is 5.5" deep
+static final float legThick = 3.5/12.0*pxPerFt; // 4x4 is 3.5" thick
+
 // deck dimensions
 static final float deckHeight = 8*pxPerFt;
 static final float deckWidth = 4*pxPerFt;
-static final float deckLength = 8*pxPerFt;
-static final float deckThick = 0.5*pxPerFt;
+static final float deckLength = sqrt(3.0)*deckWidth; 
+static final float deckRadius = deckWidth;
+static final float deckLegExtension = sqrt(pow(deckWidth,2.0)-pow(deckWidth/2.0,2.0));
 
-// leg dimensions
-/*
-static final float legH = 10*pxPerFt;
-static final float legS1 = deckWidth/2;
-static final float legS2 = sqrt(pow(legH,2)-pow(legS1,2));
-static final float legAng = acos(deckHeight/legS2);
-static final float legThick = 4.0/12.0*pxPerFt;
-*/
-static final float legThick = 4.0/12.0*pxPerFt;
-static final float olegS1 = deckWidth/2.0;
-static final float olegAng = radians(20.0);
-static final float olegS2 = deckHeight/cos(olegAng);
-static final float olegH = sqrt(pow(olegS1,2.0)+pow(olegS2,2.0));
-static final float olegAng2 = acos(olegS2/olegH);
-
+// vertical/post leg dimensions
 static final float plegS1 = deckWidth/2.0;
-static final float plegAng = radians(0);
+static final float plegDisp = 0.0;
+static final float plegAng = atan(plegDisp/deckHeight);
 static final float plegS2 = deckHeight/cos(plegAng);
 static final float plegH = sqrt(pow(plegS1,2.0)+pow(plegS2,2.0));
-static final float plegAng2 = acos(plegS2/plegH);
+static final float plegAngPoint = acos(plegS2/plegH)*2;
+static final float plegAngWide = (radians(180.0)-plegAngPoint)/2.0;
 
+// outboard/splayed leg and upper leg
+static final float olegS1 = deckWidth/2.0;
+static final float olegDisp = sqrt(pow(deckWidth,2.0)-pow(deckWidth/2.0,2.0)); // complete a triangle from plan view
+static final float olegAng = atan(olegDisp/deckHeight);
+static final float olegS2 = deckHeight/cos(olegAng);
+static final float olegH = sqrt(pow(olegS1,2.0)+pow(olegS2,2.0));
+static final float olegAngPoint = acos(olegS2/olegH)*2;
+static final float olegAngWide = (radians(180.0)-olegAngPoint)/2.0;
+
+// footprint of the sepal
+static final float sepalRadius = deckLength/2.0+olegDisp;
 
 // count of the things
 static final int N_SENSOR = 8;
@@ -49,8 +53,9 @@ PShape david;
 PShape sails;
 
 // camera control
-float viewRot = 0.0;
+float viewRot = -20.0;
 float viewAng = 60.0;
+float viewZoom = 0.9;
 
 void settings() {
   // size based on object
@@ -58,21 +63,39 @@ void settings() {
 }
 
 void setup() {
-  
-  print("deckHeight=", deckHeight/pxPerFt);
-  print(" olegS1=", olegS1/pxPerFt);
-  print(" olegS2=", olegS2/pxPerFt);
-  print(" olegAng=", degrees(olegAng));
-  print(" olegH=", olegH/pxPerFt);
-  print(" olegAng2=", degrees(olegAng2));
+  print("deck: ");
+  print(" height=", deckHeight/pxPerFt);
+  print(" width=", deckWidth/pxPerFt);
+  print(" length=", deckLength/pxPerFt);
+  print(" diameter=", deckRadius*2.0/pxPerFt);
+  print(" leg extension=", deckLegExtension/pxPerFt);
   println();
   
-  print("deckHeight=", deckHeight/pxPerFt);
-  print(" plegS1=", plegS1/pxPerFt);
-  print(" plegS2=", plegS2/pxPerFt);
-  print(" plegAng=", degrees(plegAng));
-  print(" plegH=", plegH/pxPerFt);
-  print(" plegAng2=", degrees(plegAng2));
+  print("inboard/post/non-splayed legs: ");
+  print(" S1=", plegS1/pxPerFt);
+  print(" S2=", plegS2/pxPerFt);
+  print(" H=", plegH/pxPerFt);
+  print(" displacement=", plegDisp/pxPerFt);
+  print(" point angle=", degrees(plegAngPoint));
+  print(" wide angle=", degrees(plegAngWide));
+  print(" splay angle=", degrees(plegAng));
+  println();
+
+  print("outboard/upright/splayed legs: ");
+  print(" S1=", olegS1/pxPerFt);
+  print(" S2=", olegS2/pxPerFt);
+  print(" H=", olegH/pxPerFt);
+  print(" displacement=", olegDisp/pxPerFt);
+  print(" point angle=", degrees(olegAngPoint));
+  print(" wide angle=", degrees(olegAngWide));
+  print(" splay angle=", degrees(olegAng));
+  println();
+  
+  print("sepal: ");
+  print(" diameter=",sepalRadius*2.0/pxPerFt);
+  float triSide = (deckWidth + 2.0*sqrt(pow(deckWidth/2.0,2.0)+pow(olegDisp,2.0)));
+  print(" triangle side=", triSide/pxPerFt);
+  print(" triangle altitude=", sqrt(3.0)/2.0*triSide/pxPerFt);
   println();
   
   david = loadShape("scan-the-world-michelangelo-s-david - reduced.obj");
@@ -121,7 +144,7 @@ void draw() {
 
 //  angle += PI/300;
   camera(
-    sin(radians(viewRot))*canvasSize, cos(radians(viewRot))*canvasSize, (height/2.0) / tan(PI*viewAng/180.0),
+    sin(radians(viewRot))*canvasSize*viewZoom, cos(radians(viewRot))*canvasSize*viewZoom, (height/2.0) / tan(PI*viewAng/180.0),
     0, 0, 0,
     0, 0, -1
   );
@@ -132,6 +155,7 @@ void draw() {
 
   // use David as a reference.  
   drawDavid();
+  
   // show outlines
   drawOutlines();
 
@@ -150,7 +174,7 @@ void draw() {
   drawSepal();
   
   // save it
-//  save("perspective - posts - 20 degrees.png");
+//  save("perspective - posts - eqTri degrees.png");
 //  exit();
 }
 
@@ -165,10 +189,17 @@ void keyPressed() {
     } else if (keyCode == RIGHT) {
       viewRot -= 5;
     } 
-  } 
+  } else if( key == '-') {
+      viewZoom += 0.1;
+  } else if( key == '+') {
+      viewZoom -= 0.1;
+  }
   if( viewAng>120 ) viewAng=120;
   if( viewAng<30 ) viewAng=30;
-  println("viewAng=", viewAng, " viewRot=", viewRot);
+  if( viewZoom > 5.0 ) viewZoom=5.0;
+  if( viewZoom < 0.1 ) viewZoom=0.1;
+  
+  println("viewAng=", viewAng, " viewRot=", viewRot, "viewZoom=", viewZoom);
 }
 
 void drawSails() {
@@ -238,15 +269,24 @@ void drawLeg(boolean isUp) {
     popMatrix();
     
     popMatrix();
+    
+    // add a brace to form a truss
+    pushMatrix();
+
+    translate(0, +deckLength/2.0+olegDisp/2.0, -deckHeight);
+    rotateZ(radians(90));
+    box(olegDisp, legThick, legThick);
+    
+    popMatrix();
   }
 }
 
 void drawSepal() {
 
   pushMatrix();
-  translate(0, -perimRadius);
+  translate(0, -perimRadius, 0);
 
-//  polygon(sepalRadius, 6);  // Hexagon
+  // deck
   pushMatrix();
   box(deckWidth, deckLength, deckThick);
   rotateZ(radians(360/6));
@@ -254,12 +294,9 @@ void drawSepal() {
   rotateZ(radians(360/6));
   box(deckWidth, deckLength, deckThick);
   popMatrix();
-  
-  drawLeg(true);
 
-  rotate(radians(360/6));
-  drawLeg(false);
-  rotate(radians(360/6));
+  // legs
+  pushMatrix();
   drawLeg(true);
   rotate(radians(360/6));
   drawLeg(false);
@@ -267,6 +304,32 @@ void drawSepal() {
   drawLeg(true);
   rotate(radians(360/6));
   drawLeg(false);
+  rotate(radians(360/6));
+  drawLeg(true);
+  rotate(radians(360/6));
+  drawLeg(false);
+  popMatrix();
+
+  // lines
+  pushMatrix();
+  translate(0, 0, +deckHeight);
+  rotateZ(radians(-30));
+  polygon(sepalRadius, 3);  // Triangle
+
+  strokeWeight(1.0/12.0*pxPerFt);
+  stroke(255);
+  
+  rotateZ(radians(+30));
+  line(0, olegDisp+deckLength/2.0, 0, 0, olegDisp+deckLength/2.0, -2.0*deckHeight);
+  rotateZ(radians(360/3));
+  line(0, olegDisp+deckLength/2.0, 0, 0, olegDisp+deckLength/2.0, -2.0*deckHeight);
+  rotateZ(radians(360/3));
+  line(0, olegDisp+deckLength/2.0, 0, 0, olegDisp+deckLength/2.0, -2.0*deckHeight);
+  
+  strokeWeight(1.0);
+  stroke(0);
+  
+  popMatrix();
 
   popMatrix();
 }
@@ -283,8 +346,48 @@ void drawOutlines() {
   ellipse(0, 0, flowerRadius*2, flowerRadius*2);  
 
   // drop a triangle to reference the sepal centers in plan view
+  pushMatrix();
   rotate(radians(30));
   polygon(perimRadius, 3);  // Triangle
+  popMatrix();
+
+  // drop three circles to describe the sepal footprint
+  pushMatrix();
+  translate(0, -perimRadius);
+  // trace the sepal radius
+  ellipse(0, 0, sepalRadius*2.0, sepalRadius*2.0);  
+  polygon(deckRadius, 6);  // Hexagon
+  rotate(radians(30));
+  polygon(sepalRadius, 3);  // Triangle
+  rotate(radians(60));
+  polygon(sepalRadius, 3);  // Triangle
+  popMatrix();
+
+  rotate(radians(360.0/3.0));
+
+  pushMatrix();
+  translate(0, -perimRadius);
+  // trace the sepal radius
+  ellipse(0, 0, sepalRadius*2.0, sepalRadius*2.0);  
+  polygon(deckRadius, 6);  // Hexagon
+  rotate(radians(30));
+  polygon(sepalRadius, 3);  // Triangle
+  rotate(radians(60));
+  polygon(sepalRadius, 3);  // Triangle
+  popMatrix();
+
+  rotate(radians(360.0/3.0));
+
+  pushMatrix();
+  translate(0, -perimRadius);
+  // trace the sepal radius
+  ellipse(0, 0, sepalRadius*2.0, sepalRadius*2.0);  
+  polygon(deckRadius, 6);  // Hexagon
+  rotate(radians(30));
+  polygon(sepalRadius, 3);  // Triangle
+  rotate(radians(60));
+  polygon(sepalRadius, 3);  // Triangle
+  popMatrix();
 
   popMatrix();
 }

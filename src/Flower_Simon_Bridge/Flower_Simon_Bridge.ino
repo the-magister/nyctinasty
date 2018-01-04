@@ -107,26 +107,33 @@ void idle() {
   if( sendInterval.check() ) {
 
     // colors
-    static byte hue[3] = {HUE_RED,HUE_GREEN,HUE_BLUE};
-    for( byte i=0; i<3; i++ ) {
-      hue[i]+=1;
-      CRGB color = CHSV(hue[i], 255, 255);
- 
-      // set in message
-      sM.simonMessage.light[i].red = color.red;
-      sM.simonMessage.light[i].green = color.green;
-      sM.simonMessage.light[i].blue = color.blue;
-    }
+    // note: "POWER" must be enabled for the Towers to respond
+    static byte hue = {HUE_BLUE};
+    CRGB color = CHSV(hue++, 255, 255);
     
+    // set in message
+    sM.simonMessage.light[0].red = color.red;
+    sM.simonMessage.light[0].green = color.green;
+    sM.simonMessage.light[0].blue = color.blue;
+    // copy
+    sM.simonMessage.light[1] = sM.simonMessage.light[0];
+    sM.simonMessage.light[2] = sM.simonMessage.light[0];
+    sM.simonMessage.light[3] = sM.simonMessage.light[0];
+
     // flame effects
+    // note: "POWER" and "ARM" must be enabled for the Towers to respond
+    byte duration = 0;
+//    if( random(255) < 5 ) duration = 150;
+    
     fireInstruction newFire;
-    newFire.duration = constrain(0, 0, 255);
+    newFire.duration = constrain(duration, 0, 255);
     newFire.effect = constrain(veryLean, veryRich, veryLean);
 
     // set in message
     sM.simonMessage.fire[0] = newFire;
     sM.simonMessage.fire[1] = newFire;
     sM.simonMessage.fire[2] = newFire;
+    sM.simonMessage.fire[3] = newFire;
 
     // ship it
     radioSend();
@@ -163,7 +170,8 @@ void central() {
 }
 
 void radioSend() {
-  const systemMode sMode = EXTERN;
+//  const systemMode sMode = EXTERN;
+  const systemMode sMode = GAMEPLAY;
   sM.simonMessage.mode = (byte)sMode;
 
   radio.send((byte)BROADCAST, (const void*)(&sM.simonMessage), sizeof(SimonSystemState), false);  
@@ -183,7 +191,7 @@ void radioInitialize() {
 
   radioReset();
   
-  radio.initialize(RF69_915MHZ, CONSOLE, D_GROUP_ID);
+  radio.initialize(RF69_915MHZ, 11, D_GROUP_ID); // we go there.
   radio.setHighPower(); //uncomment only for RFM69H(C)W!
   radio.promiscuous(true);
 }
