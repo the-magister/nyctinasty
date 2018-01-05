@@ -69,7 +69,15 @@ float viewAng = 60.0;
 float viewZoom = 0.9;
 
 import peasy.*;
+import peasy.org.apache.commons.math.geometry.*;
+
 PeasyCam camera;
+CameraState state;
+CameraState[] viewpoints = new CameraState[] {
+//  new CameraState(new Rotation(RotationOrder.XYZ,-0.913286f,0.019479f,0.018596f),new Vector3D(23,950,733),35)
+  new CameraState(new Rotation(RotationOrder.XYZ,-0.913286f,0.019479f,0.018596f),new Vector3D(0,0,0),1200),
+  new CameraState(new Rotation(RotationOrder.XYZ,0,0f,0f),new Vector3D(0,0,0),1200)
+};
 
 void settings() {
   // size based on object
@@ -135,6 +143,7 @@ void setup() {
   frameRate(33);
   
   camera = new PeasyCam(this, 0, 0, 0, canvasSize);
+  bindCamera(0);  
 }
 
 // https://processing.org/tutorials/p3d/
@@ -222,9 +231,11 @@ void keyPressed() {
     } else if (keyCode == DOWN) {
       viewAng += 5;
     } else if (keyCode == LEFT) {
-      viewRot += 5;
+      viewRot += Math.PI/360/100;
+      //camera.rotateZ(viewRot);
     } else if (keyCode == RIGHT) {
-      viewRot -= 5;
+      viewRot -= Math.PI/360/100;
+      //camera.rotateZ(viewRot);
     } 
   } else if( key == '-') {
       viewZoom += 0.1;
@@ -233,12 +244,34 @@ void keyPressed() {
   } else if( key == 'a') {
       showAnimations = !showAnimations;
   }
+  /*
   if( viewAng>120 ) viewAng=120;
   if( viewAng<30 ) viewAng=30;
   if( viewZoom > 5.0 ) viewZoom=5.0;
   if( viewZoom < 0.1 ) viewZoom=0.1;
+  */
+  //println("viewAng=", viewAng, " viewRot=", viewRot, "viewZoom=", viewZoom);
+}
+
+public void keyReleased() {
+  switch(key) {
+    case 'p' : printState(camera); break;
+    case '1' : bindCamera(0); break;
+    case '2' : bindCamera(1); break;
+    case 'r' : camera.reset(); break;
+  }
+}
+
+void printState(PeasyCam cam) {
+  float[] rot = cam.getRotations();
+  float[] pos = cam.getPosition();
+  double dist = cam.getDistance();
   
-  println("viewAng=", viewAng, " viewRot=", viewRot, "viewZoom=", viewZoom);
+  System.out.printf("Rot: %f %f %f  pos: %f %f %f  dist: %f",rot[0],rot[1],rot[2],pos[0],pos[1],pos[2],dist);
+}
+
+void bindCamera(int view) {
+  camera.setState(viewpoints[view],500);
 }
 
 void drawSails() {
