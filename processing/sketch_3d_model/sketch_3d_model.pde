@@ -45,6 +45,17 @@ static final float sepalRadius = deckLength/2.0+olegDisp;
 static final int N_SENSOR = 8;
 static final int N_ARCH = 3;
 static final int N_SEPAL = 3;
+static final int N_LED = 16;
+
+// animations?
+boolean showAnimations = false;
+
+// packages lets us access the project traffic
+import mqtt.*;
+MQTTClient client;
+
+// accumulate distance information vai mqtt
+float[][][] dist = new float[N_SEPAL][N_ARCH][N_SENSOR];
 
 // a human for reference
 PShape david;
@@ -111,11 +122,22 @@ void setup() {
   sails.scale(pxPermm); // looks like it's in mm scale
   sails.setStroke(color(255));
   sails.setFill(color(255));
+
+  // mqtt 
+  client = new MQTTClient(this);
+  //  client.connect("mqtt://192.168.4.1", "visualize");
+  //  client.subscribe("nyc/Distance/#");
+  
+  // set frame rate
+  frameRate(33);
 }
 
 // https://processing.org/tutorials/p3d/
 
 void draw() {
+  // simulate messages
+  simMessageReceived();
+  
   // background
   background(102);
 
@@ -165,17 +187,39 @@ void draw() {
   
   drawSails();
 
-  drawSepal();
+  drawSepal(0);
 
   rotate(radians(360.0/3.0));
-  drawSepal();
+  drawSepal(1);
   
   rotate(radians(360.0/3.0));
-  drawSepal();
+  drawSepal(2);
   
   // save it
 //  save("perspective - posts - eqTri degrees.png");
 //  exit();
+}
+
+void messageReceived(String topic, byte[] payload) {
+  println("new message: " + topic + " - " + new String(payload));
+}
+
+void simMessageReceived() {
+//  boolean allDone = true;
+  for ( int s=0; s<N_SEPAL; s++) {
+    for ( int a=0; a<N_ARCH; a++) {
+      for ( int n=0; n<N_SENSOR; n++) {
+        dist[a][s][n] = abs( cos(radians(millis()/10 *(a+1)*(s+1)*(n+1)/(N_SEPAL*N_ARCH*N_SENSOR) % 360)) ) * deckHeight;
+//        dist[a][s][n] = abs( cos(radians((float)(frames+1) *(a+1)*(s+1)*(n+1) % 360)) ) * archHeight;
+//        if ( dist[a][s][n] != archHeight ) allDone=false;
+      }
+    }
+  }
+//  if ( allDone ) {
+//    gifExport.finish();
+//    println("gif saved");
+//    exit();
+//  }
 }
 
 void keyPressed() {
@@ -193,6 +237,8 @@ void keyPressed() {
       viewZoom += 0.1;
   } else if( key == '+') {
       viewZoom -= 0.1;
+  } else if( key == 'a') {
+      showAnimations = !showAnimations;
   }
   if( viewAng>120 ) viewAng=120;
   if( viewAng<30 ) viewAng=30;
@@ -213,11 +259,11 @@ void drawSails() {
 void drawDavid() {
   pushMatrix();
   translate(0, +perimRadius, -deckHeight);
-  shape(david);
+  shape(david);   
   popMatrix();
 }
 
-void drawLeg(boolean isUp) {
+void drawLeg(boolean isUp, int sN) {
   
   float angle =  radians(90)-olegAng; 
   if( isUp ) angle = olegAng-radians(90);
@@ -234,20 +280,30 @@ void drawLeg(boolean isUp) {
   translate(+olegS1/2,+olegH/2,0);
   rotateZ(radians(90)+asin(olegS1/olegH));
   box(olegH, legThick, legThick);
+
+  if( isUp ) translate(-olegH/2.0, 0, -legThick/2.0);
+  else translate(-olegH/2.0, -legThick/2.0, 0);
+  drawLightSegment(isUp, sN); 
+  
   popMatrix();
   
   pushMatrix();
   translate(-olegS1/2,+olegH/2,0);
   rotateZ(radians(90)-asin(olegS1/olegH));
   box(olegH, legThick, legThick);
+  
+  if( isUp ) translate(-olegH/2.0, 0, -legThick/2.0);
+  else translate(-olegH/2.0, +legThick/2.0, 0);
+  drawLightSegment(isUp, sN);
+  
   popMatrix();
     
   popMatrix();
   
+  // add a post
   if( !isUp ) {
     angle = radians(90)+plegAng;
     
-    // add symmetric triangle
     pushMatrix();
 
     translate(0, +deckLength/2, 0);
@@ -281,7 +337,7 @@ void drawLeg(boolean isUp) {
   }
 }
 
-void drawSepal() {
+void drawSepal(int sN) {
 
   pushMatrix();
   translate(0, -perimRadius, 0);
@@ -294,28 +350,39 @@ void drawSepal() {
   rotateZ(radians(360/6));
   box(deckWidth, deckLength, deckThick);
   popMatrix();
+  
+  // distance sensors
+  pushMatrix();
+  drawArchSensor(dist[sN][0]);
+  rotateZ(radians(360/3));
+  drawArchSensor(dist[sN][1]);
+  rotateZ(radians(360/3));
+  drawArchSensor(dist[sN][2]);
+  rotateZ(radians(360/3));
+  popMatrix();
 
   // legs
   pushMatrix();
-  drawLeg(true);
+  drawLeg(true, sN);
   rotate(radians(360/6));
-  drawLeg(false);
+  drawLeg(false, sN);
   rotate(radians(360/6));
-  drawLeg(true);
+  drawLeg(true, sN);
   rotate(radians(360/6));
-  drawLeg(false);
+  drawLeg(false, sN);
   rotate(radians(360/6));
-  drawLeg(true);
+  drawLeg(true, sN);
   rotate(radians(360/6));
-  drawLeg(false);
+  drawLeg(false, sN);
   popMatrix();
 
-  // lines
+  // roof
   pushMatrix();
   translate(0, 0, +deckHeight);
   rotateZ(radians(-30));
   polygon(sepalRadius, 3);  // Triangle
 
+  // lines
   strokeWeight(1.0/12.0*pxPerFt);
   stroke(255);
   
@@ -333,6 +400,57 @@ void drawSepal() {
 
   popMatrix();
 }
+
+
+int lightHue = 0;
+void drawLightSegment(boolean isUp, int sN) {
+  if( !showAnimations ) return;
+  
+  colorMode(HSB, 255, 255, 255);
+  
+  pushMatrix();
+  for( int i=0; i<N_LED; i++ ) {
+    lightHue = (lightHue+5) % 255;
+    stroke(color(lightHue,255,255));
+    fill(color(lightHue,255,255));
+  
+    translate(olegH/(float)(N_LED+1), 0, 0);
+    sphere(legThick/2.0*0.9);
+  }
+  popMatrix();
+
+  colorMode(RGB);
+  fill(255);
+  stroke(0);
+}
+
+void drawArchSensor(float dist[]) {
+  if( !showAnimations ) return;
+  
+  colorMode(HSB, 255, 255, 255);
+  stroke(color(64,255,255));
+  fill(color(64,255,255));
+
+//  fill(color(255*i/(N_SENSOR-1),128,255));
+  // sensors
+  pushMatrix();
+  translate(-deckWidth/2.0, +deckLength/2.0,0);
+  rotateX(radians(-90));
+  beginShape(TRIANGLES);
+  for ( int i=0; i<N_SENSOR; i++ ) {
+//    fill(color(255*i/(N_SENSOR-1),128,255));
+    vertex(deckWidth/8.0 * i, dist[i]); 
+    vertex(deckWidth/8.0 * (i+0.5), 0); 
+    vertex(deckWidth/8.0 * (i+1), dist[i]);
+  }
+  endShape();  
+  popMatrix();
+  
+//  colorMode(RGB);
+  fill(255);
+  stroke(0);
+}
+
 
 void drawOutlines() {
   pushMatrix();
