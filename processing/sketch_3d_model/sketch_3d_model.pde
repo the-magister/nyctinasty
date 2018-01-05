@@ -68,6 +68,9 @@ float viewRot = -20.0;
 float viewAng = 60.0;
 float viewZoom = 0.9;
 
+import peasy.*;
+PeasyCam camera;
+
 void settings() {
   // size based on object
   size(canvasSize, canvasSize, P3D);
@@ -130,6 +133,8 @@ void setup() {
   
   // set frame rate
   frameRate(33);
+  
+  camera = new PeasyCam(this, 0, 0, 0, canvasSize);
 }
 
 // https://processing.org/tutorials/p3d/
@@ -144,33 +149,21 @@ void draw() {
   // camera settings
   lights();
   
-//  camera(width/2.0, height/2.0, (height/2.0) / tan(PI*30.0 / 180.0), width/2.0, height/2.0, 0, 0, 1, 0); // defaults
-//  camera(width/2, height/2*3, (height/2.0) / tan(PI*60.0 / 180.0), width/2.0, height/2.0, 0, 0, 1, 0);
- 
-//  camera(width/2, height/2, (height/2.0) / tan(PI*60.0 / 180.0), width/2.0, height/2.0, 0, 0, 1, 0);
-
-//  camera(width/2, height/2*4, 1, width/2.0, height/2.0, 0, 0, 1, 0);
-
-//  camera(width/2, height/2*3, (height/2.0) / tan(PI*60.0 / 180.0), width/2.0, height/2.0, 0, 0, 1, 0);
-
-//  camera(width/2, height/2*2.5, (height/2.0) / tan(PI*60.0 / 180.0), width/2.0, height/2.0, 0, 0, 1, 0);
-
-//  camera(width/2, height/2*3, (height/2.0) / tan(PI*60.0 / 180.0), width/2.0, height/2.0, 0, 0, 1, 0);
-
 //  ortho(-width/2.0, width/2.0, -height/2.0, height/2.0);
 //  float cameraZ = ((height/2/2.0) / tan(PI*60.0/360.0)); // defaults
 //  perspective(PI/3.0, width/height, cameraZ/10.0, cameraZ*10.0); // defaults
  
   // set (0,0) in the center
-  translate(width/2, height/2, 0);
+  //translate(width/2, height/2, 0);
 
 //  angle += PI/300;
+/*
   camera(
     sin(radians(viewRot))*canvasSize*viewZoom, cos(radians(viewRot))*canvasSize*viewZoom, (height/2.0) / tan(PI*viewAng/180.0),
     0, 0, 0,
     0, 0, -1
   );
-  
+*/  
   // denote extents and boundaries with dark lines
   noFill();
   stroke(64);
