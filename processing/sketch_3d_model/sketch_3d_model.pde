@@ -148,9 +148,13 @@ void setup() {
 
 // https://processing.org/tutorials/p3d/
 
+long lastTime = 0;
 void draw() {
-  // simulate messages
-  simMessageReceived();
+  long currTime = System.currentTimeMillis();
+  if (currTime - lastTime > 100) {  // Don't run the simulation at framerate, allow nav to always be smooth
+    simMessageReceived();
+    lastTime = currTime;
+  }
   
   // background
   background(102);
@@ -435,6 +439,7 @@ void drawLightSegment(boolean isUp, int sN) {
   colorMode(HSB, 255, 255, 255);
   
   pushMatrix();
+  sphereDetail(12);
   for( int i=0; i<N_LED; i++ ) {
     lightHue = (lightHue+5) % 255;
     stroke(color(lightHue,255,255));
@@ -443,6 +448,7 @@ void drawLightSegment(boolean isUp, int sN) {
     translate(olegH/(float)(N_LED+1), 0, 0);
     sphere(legThick/2.0*0.9);
   }
+  sphereDetail(30);
   popMatrix();
 
   colorMode(RGB);
