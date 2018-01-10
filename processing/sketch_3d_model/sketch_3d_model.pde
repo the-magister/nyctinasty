@@ -18,23 +18,23 @@ static final float deckHeight = 8*pxPerFt;
 static final float deckWidth = 4*pxPerFt;
 static final float deckLength = sqrt(3.0)*deckWidth; 
 static final float deckRadius = deckWidth;
-static final float deckLegExtension = sqrt(pow(deckWidth,2.0)-pow(deckWidth/2.0,2.0));
+static final float deckLegExtension = sqrt(pow(deckWidth, 2.0)-pow(deckWidth/2.0, 2.0));
 
 // vertical/post leg dimensions
 static final float plegS1 = deckWidth/2.0;
 static final float plegDisp = 0.0;
 static final float plegAng = atan(plegDisp/deckHeight);
 static final float plegS2 = deckHeight/cos(plegAng);
-static final float plegH = sqrt(pow(plegS1,2.0)+pow(plegS2,2.0));
+static final float plegH = sqrt(pow(plegS1, 2.0)+pow(plegS2, 2.0));
 static final float plegAngPoint = acos(plegS2/plegH)*2;
 static final float plegAngWide = (radians(180.0)-plegAngPoint)/2.0;
 
 // outboard/splayed leg and upper leg
 static final float olegS1 = deckWidth/2.0;
-static final float olegDisp = sqrt(pow(deckWidth,2.0)-pow(deckWidth/2.0,2.0)); // complete a triangle from plan view
+static final float olegDisp = sqrt(pow(deckWidth, 2.0)-pow(deckWidth/2.0, 2.0)); // complete a triangle from plan view
 static final float olegAng = atan(olegDisp/deckHeight);
 static final float olegS2 = deckHeight/cos(olegAng);
-static final float olegH = sqrt(pow(olegS1,2.0)+pow(olegS2,2.0));
+static final float olegH = sqrt(pow(olegS1, 2.0)+pow(olegS2, 2.0));
 static final float olegAngPoint = acos(olegS2/olegH)*2;
 static final float olegAngWide = (radians(180.0)-olegAngPoint)/2.0;
 
@@ -74,10 +74,16 @@ import peasy.org.apache.commons.math.geometry.*;
 PeasyCam camera;
 CameraState state;
 CameraState[] viewpoints = new CameraState[] {
-//  new CameraState(new Rotation(RotationOrder.XYZ,-0.913286f,0.019479f,0.018596f),new Vector3D(23,950,733),35)
-  new CameraState(new Rotation(RotationOrder.XYZ,-0.913286f,0.019479f,0.018596f),new Vector3D(0,0,0),1200),
-  new CameraState(new Rotation(RotationOrder.XYZ,0,0f,0f),new Vector3D(0,0,0),1200)
+  //  new CameraState(new Rotation(RotationOrder.XYZ,-0.913286f,0.019479f,0.018596f),new Vector3D(23,950,733),35)
+  new CameraState(new Rotation(RotationOrder.XYZ, -0.913286f, 0.019479f, 0.018596f), new Vector3D(0, 0, 0), 1200), 
+  new CameraState(new Rotation(RotationOrder.XYZ, 0, 0f, 0f), new Vector3D(0, 0, 0), 1200)
 };
+
+// movie-making
+import java.io.File;
+boolean recordMovie = false;
+String moviePath;
+int frameCount;
 
 void settings() {
   // size based on object
@@ -92,7 +98,7 @@ void setup() {
   print(" diameter=", deckRadius*2.0/pxPerFt);
   print(" leg extension=", deckLegExtension/pxPerFt);
   println();
-  
+
   print("inboard/post/non-splayed legs: ");
   print(" S1=", plegS1/pxPerFt);
   print(" S2=", plegS2/pxPerFt);
@@ -112,22 +118,22 @@ void setup() {
   print(" wide angle=", degrees(olegAngWide));
   print(" splay angle=", degrees(olegAng));
   println();
-  
+
   print("sepal: ");
-  print(" diameter=",sepalRadius*2.0/pxPerFt);
-  float triSide = (deckWidth + 2.0*sqrt(pow(deckWidth/2.0,2.0)+pow(olegDisp,2.0)));
+  print(" diameter=", sepalRadius*2.0/pxPerFt);
+  float triSide = (deckWidth + 2.0*sqrt(pow(deckWidth/2.0, 2.0)+pow(olegDisp, 2.0)));
   print(" triangle side=", triSide/pxPerFt);
   print(" triangle altitude=", sqrt(3.0)/2.0*triSide/pxPerFt);
   println();
-  
+
   david = loadShape("scan-the-world-michelangelo-s-david - reduced.obj");
-//  david.scale(0.5);
+  //  david.scale(0.5);
   david.rotateZ(radians(180));
   david.scale(1.0/388.0*(69.7/12.0)*pxPerFt); // object is ~388 mm, and we want 67.7 in, average male height in NA
-//  david.scale(1.0/2.9);
+  //  david.scale(1.0/2.9);
   david.setFill(color(255));
   david.setStroke(color(255));
-//  println("david height=", david.height()/pxPerFt);
+  //  println("david height=", david.height()/pxPerFt);
 
   sails = loadShape("center - reduced.obj");
   sails.scale(pxPermm); // looks like it's in mm scale
@@ -138,12 +144,12 @@ void setup() {
   client = new MQTTClient(this);
   //  client.connect("mqtt://192.168.4.1", "visualize");
   //  client.subscribe("nyc/Distance/#");
-  
+
   // set frame rate
-  frameRate(33);
-  
+  frameRate(10);
+
   camera = new PeasyCam(this, 0, 0, 0, canvasSize);
-  bindCamera(0);  
+  bindCamera(0);
 }
 
 // https://processing.org/tutorials/p3d/
@@ -155,55 +161,60 @@ void draw() {
     simMessageReceived();
     lastTime = currTime;
   }
-  
+
   // background
   background(102);
 
   // camera settings
   lights();
-  
-//  ortho(-width/2.0, width/2.0, -height/2.0, height/2.0);
-//  float cameraZ = ((height/2/2.0) / tan(PI*60.0/360.0)); // defaults
-//  perspective(PI/3.0, width/height, cameraZ/10.0, cameraZ*10.0); // defaults
- 
+
+  //  ortho(-width/2.0, width/2.0, -height/2.0, height/2.0);
+  //  float cameraZ = ((height/2/2.0) / tan(PI*60.0/360.0)); // defaults
+  //  perspective(PI/3.0, width/height, cameraZ/10.0, cameraZ*10.0); // defaults
+
   // set (0,0) in the center
   //translate(width/2, height/2, 0);
 
-//  angle += PI/300;
-/*
+  //  angle += PI/300;
+  /*
   camera(
-    sin(radians(viewRot))*canvasSize*viewZoom, cos(radians(viewRot))*canvasSize*viewZoom, (height/2.0) / tan(PI*viewAng/180.0),
-    0, 0, 0,
-    0, 0, -1
-  );
-*/  
+   sin(radians(viewRot))*canvasSize*viewZoom, cos(radians(viewRot))*canvasSize*viewZoom, (height/2.0) / tan(PI*viewAng/180.0),
+   0, 0, 0,
+   0, 0, -1
+   );
+   */
   // denote extents and boundaries with dark lines
   noFill();
   stroke(64);
 
   // use David as a reference.  
   drawDavid();
-  
+
   // show outlines
   drawOutlines();
 
   // denote physical shapes by white fill
   fill(255);
   stroke(0);
-  
+
   drawSails();
 
   drawSepal(0);
 
   rotate(radians(360.0/3.0));
   drawSepal(1);
-  
+
   rotate(radians(360.0/3.0));
   drawSepal(2);
-  
+
   // save it
-//  save("perspective - posts - eqTri degrees.png");
-//  exit();
+  //  save("perspective - posts - eqTri degrees.png");
+  //  exit();
+  
+  if( recordMovie ) {
+      saveFrame(moviePath + frameCount + ".tif");
+      frameCount++;
+  }
 }
 
 void messageReceived(String topic, byte[] payload) {
@@ -211,21 +222,21 @@ void messageReceived(String topic, byte[] payload) {
 }
 
 void simMessageReceived() {
-//  boolean allDone = true;
+  //  boolean allDone = true;
   for ( int s=0; s<N_SEPAL; s++) {
     for ( int a=0; a<N_ARCH; a++) {
       for ( int n=0; n<N_SENSOR; n++) {
         dist[a][s][n] = abs( cos(radians(millis()/10 *(a+1)*(s+1)*(n+1)/(N_SEPAL*N_ARCH*N_SENSOR) % 360)) ) * deckHeight;
-//        dist[a][s][n] = abs( cos(radians((float)(frames+1) *(a+1)*(s+1)*(n+1) % 360)) ) * archHeight;
-//        if ( dist[a][s][n] != archHeight ) allDone=false;
+        //        dist[a][s][n] = abs( cos(radians((float)(frames+1) *(a+1)*(s+1)*(n+1) % 360)) ) * archHeight;
+        //        if ( dist[a][s][n] != archHeight ) allDone=false;
       }
     }
   }
-//  if ( allDone ) {
-//    gifExport.finish();
-//    println("gif saved");
-//    exit();
-//  }
+  //  if ( allDone ) {
+  //    gifExport.finish();
+  //    println("gif saved");
+  //    exit();
+  //  }
 }
 
 void keyPressed() {
@@ -240,29 +251,53 @@ void keyPressed() {
     } else if (keyCode == RIGHT) {
       viewRot -= Math.PI/360/100;
       //camera.rotateZ(viewRot);
-    } 
-  } else if( key == '-') {
-      viewZoom += 0.1;
-  } else if( key == '+') {
-      viewZoom -= 0.1;
-  } else if( key == 'a') {
-      showAnimations = !showAnimations;
+    }
+  } else if ( key == '-') {
+    viewZoom += 0.1;
+  } else if ( key == '+') {
+    viewZoom -= 0.1;
+  } else if ( key == 'a') {
+    showAnimations = !showAnimations;
   }
   /*
   if( viewAng>120 ) viewAng=120;
-  if( viewAng<30 ) viewAng=30;
-  if( viewZoom > 5.0 ) viewZoom=5.0;
-  if( viewZoom < 0.1 ) viewZoom=0.1;
-  */
+   if( viewAng<30 ) viewAng=30;
+   if( viewZoom > 5.0 ) viewZoom=5.0;
+   if( viewZoom < 0.1 ) viewZoom=0.1;
+   */
   //println("viewAng=", viewAng, " viewRot=", viewRot, "viewZoom=", viewZoom);
 }
 
 public void keyReleased() {
   switch(key) {
-    case 'p' : printState(camera); break;
-    case '1' : bindCamera(0); break;
-    case '2' : bindCamera(1); break;
-    case 'r' : camera.reset(); break;
+  case 'p' : 
+    printState(camera); 
+    break;
+  case '1' : 
+    bindCamera(0); 
+    break;
+  case '2' : 
+    bindCamera(1); 
+    break;
+  case 'r' : 
+    camera.reset(); 
+    break;
+  case 'm' : 
+    if ( !recordMovie ) {
+      moviePath = sketchPath() + "/frames/";
+      println("Cleaned up ", moviePath);
+      File[] files = listFiles(moviePath);
+      for (int i = 0; i < files.length; i++) {
+        File f = files[i];
+        f.delete();
+      }
+      recordMovie = true;
+      frameCount = 0;
+    } else {
+      println("movie stopped");
+      recordMovie = false;
+    }
+    break;
   }
 }
 
@@ -270,12 +305,12 @@ void printState(PeasyCam cam) {
   float[] rot = cam.getRotations();
   float[] pos = cam.getPosition();
   double dist = cam.getDistance();
-  
-  System.out.printf("Rot: %f %f %f  pos: %f %f %f  dist: %f",rot[0],rot[1],rot[2],pos[0],pos[1],pos[2],dist);
+
+  System.out.printf("Rot: %f %f %f  pos: %f %f %f  dist: %f", rot[0], rot[1], rot[2], pos[0], pos[1], pos[2], dist);
 }
 
 void bindCamera(int view) {
-  camera.setState(viewpoints[view],500);
+  camera.setState(viewpoints[view], 500);
 }
 
 void drawSails() {
@@ -294,75 +329,75 @@ void drawDavid() {
 }
 
 void drawLeg(boolean isUp, int sN) {
-  
+
   float angle =  radians(90)-olegAng; 
-  if( isUp ) angle = olegAng-radians(90);
+  if ( isUp ) angle = olegAng-radians(90);
 
   pushMatrix();
 
   translate(0, +deckLength/2, 0);
-  
+
   rotateX(-angle);
 
   box(olegS1*2, legThick, legThick);
 
   pushMatrix();
-  translate(+olegS1/2,+olegH/2,0);
+  translate(+olegS1/2, +olegH/2, 0);
   rotateZ(radians(90)+asin(olegS1/olegH));
   box(olegH, legThick, legThick);
 
-  if( isUp ) translate(-olegH/2.0, 0, -legThick/2.0);
+  if ( isUp ) translate(-olegH/2.0, 0, -legThick/2.0);
   else translate(-olegH/2.0, -legThick/2.0, 0);
   drawLightSegment(isUp, sN); 
-  
+
   popMatrix();
-  
+
   pushMatrix();
-  translate(-olegS1/2,+olegH/2,0);
+  translate(-olegS1/2, +olegH/2, 0);
   rotateZ(radians(90)-asin(olegS1/olegH));
   box(olegH, legThick, legThick);
-  
-  if( isUp ) translate(-olegH/2.0, 0, -legThick/2.0);
+
+  if ( isUp ) translate(-olegH/2.0, 0, -legThick/2.0);
   else translate(-olegH/2.0, +legThick/2.0, 0);
   drawLightSegment(isUp, sN);
-  
+
   popMatrix();
-    
+
   popMatrix();
-  
+
   // add a post
-  if( !isUp ) {
+  if ( !isUp ) {
     angle = radians(90)+plegAng;
-    
+
     pushMatrix();
 
     translate(0, +deckLength/2, 0);
-    
+
     rotateX(-angle);
-  
+
     box(plegS1*2, legThick, legThick);
-  
+
     pushMatrix();
-    translate(+plegS1/2,+plegH/2,0);
+    translate(+plegS1/2, +plegH/2, 0);
     rotateZ(radians(90)+asin(plegS1/plegH));
     box(plegH, legThick, legThick);
     popMatrix();
-    
+
     pushMatrix();
-    translate(-plegS1/2,+plegH/2,0);
+    translate(-plegS1/2, +plegH/2, 0);
     rotateZ(radians(90)-asin(plegS1/plegH));
     box(plegH, legThick, legThick);
     popMatrix();
-    
+
     popMatrix();
-    
+
     // add a brace to form a truss
     pushMatrix();
 
     translate(0, +deckLength/2.0+olegDisp/2.0, -deckHeight);
     rotateZ(radians(90));
     box(olegDisp, legThick, legThick);
-    
+
     popMatrix();
   }
 }
@@ -380,7 +415,7 @@ void drawSepal(int sN) {
   rotateZ(radians(360/6));
   box(deckWidth, deckLength, deckThick);
   popMatrix();
-  
+
   // distance sensors
   pushMatrix();
   drawArchSensor(dist[sN][0]);
@@ -415,17 +450,17 @@ void drawSepal(int sN) {
   // lines
   strokeWeight(1.0/12.0*pxPerFt);
   stroke(255);
-  
+
   rotateZ(radians(+30));
   line(0, olegDisp+deckLength/2.0, 0, 0, olegDisp+deckLength/2.0, -2.0*deckHeight);
   rotateZ(radians(360/3));
   line(0, olegDisp+deckLength/2.0, 0, 0, olegDisp+deckLength/2.0, -2.0*deckHeight);
   rotateZ(radians(360/3));
   line(0, olegDisp+deckLength/2.0, 0, 0, olegDisp+deckLength/2.0, -2.0*deckHeight);
-  
+
   strokeWeight(1.0);
   stroke(0);
-  
+
   popMatrix();
 
   popMatrix();
@@ -434,17 +469,17 @@ void drawSepal(int sN) {
 
 int lightHue = 0;
 void drawLightSegment(boolean isUp, int sN) {
-  if( !showAnimations ) return;
-  
+  if ( !showAnimations ) return;
+
   colorMode(HSB, 255, 255, 255);
-  
+
   pushMatrix();
   sphereDetail(12);
-  for( int i=0; i<N_LED; i++ ) {
+  for ( int i=0; i<N_LED; i++ ) {
     lightHue = (lightHue+5) % 255;
-    stroke(color(lightHue,255,255));
-    fill(color(lightHue,255,255));
-  
+    stroke(color(lightHue, 255, 255));
+    fill(color(lightHue, 255, 255));
+
     translate(olegH/(float)(N_LED+1), 0, 0);
     sphere(legThick/2.0*0.9);
   }
@@ -457,28 +492,28 @@ void drawLightSegment(boolean isUp, int sN) {
 }
 
 void drawArchSensor(float dist[]) {
-  if( !showAnimations ) return;
-  
-  colorMode(HSB, 255, 255, 255);
-  stroke(color(64,255,255));
-  fill(color(64,255,255));
+  if ( !showAnimations ) return;
 
-//  fill(color(255*i/(N_SENSOR-1),128,255));
+  colorMode(HSB, 255, 255, 255);
+  stroke(color(64, 255, 255));
+  fill(color(64, 255, 255));
+
+  //  fill(color(255*i/(N_SENSOR-1),128,255));
   // sensors
   pushMatrix();
-  translate(-deckWidth/2.0, +deckLength/2.0,0);
+  translate(-deckWidth/2.0, +deckLength/2.0, 0);
   rotateX(radians(-90));
   beginShape(TRIANGLES);
   for ( int i=0; i<N_SENSOR; i++ ) {
-//    fill(color(255*i/(N_SENSOR-1),128,255));
+    //    fill(color(255*i/(N_SENSOR-1),128,255));
     vertex(deckWidth/8.0 * i, dist[i]); 
     vertex(deckWidth/8.0 * (i+0.5), 0); 
     vertex(deckWidth/8.0 * (i+1), dist[i]);
   }
   endShape();  
   popMatrix();
-  
-//  colorMode(RGB);
+
+  //  colorMode(RGB);
   fill(255);
   stroke(0);
 }
