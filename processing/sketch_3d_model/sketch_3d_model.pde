@@ -75,8 +75,10 @@ PeasyCam camera;
 CameraState state;
 CameraState[] viewpoints = new CameraState[] {
   //  new CameraState(new Rotation(RotationOrder.XYZ,-0.913286f,0.019479f,0.018596f),new Vector3D(23,950,733),35)
-  new CameraState(new Rotation(RotationOrder.XYZ, -0.913286f, 0.019479f, 0.018596f), new Vector3D(0, 0, 0), 1200), 
-  new CameraState(new Rotation(RotationOrder.XYZ, 0, 0f, 0f), new Vector3D(0, 0, 0), 1200)
+//  new CameraState(new Rotation(RotationOrder.XYZ, -0.913286f, 0.019479f, 0.018596f), new Vector3D(0, 0, 0), 800), 
+  new CameraState(new Rotation(RotationOrder.XYZ, -1.1605f, 0.020477f, 0.023135), new Vector3D(0, 0, 0), 800), 
+  new CameraState(new Rotation(RotationOrder.XYZ, 0, 0f, 0f), new Vector3D(0, 0, 0), 1200),
+  new CameraState(new Rotation(RotationOrder.XYZ, -PI/2, 0f, 0f), new Vector3D(0, 0, 0), 1200)
 };
 
 // movie-making
@@ -87,7 +89,11 @@ int frameCount;
 
 void settings() {
   // size based on object
-  size(canvasSize, canvasSize, P3D);
+  int w = (int) Math.min((displayWidth * 0.8f),displayHeight*0.8f);
+  int h = (int) (w * 120 / 124f);  // aspect ratio of human field of view
+  
+  System.out.println("w: " + w + " h: " + h);
+  size(w, h, P3D);
 }
 
 void setup() {
@@ -126,16 +132,17 @@ void setup() {
   print(" triangle altitude=", sqrt(3.0)/2.0*triSide/pxPerFt);
   println();
 
+
   david = loadShape("scan-the-world-michelangelo-s-david - reduced.obj");
   //  david.scale(0.5);
   david.rotateZ(radians(180));
-  david.scale(1.0/388.0*(69.7/12.0)*pxPerFt); // object is ~388 mm, and we want 67.7 in, average male height in NA
+  david.scale(1.0/395.04*(69.7/12.0)*pxPerFt); // object is ~395 mm, and we want 69.7 in, average male height in NA
   //  david.scale(1.0/2.9);
   david.setFill(color(255));
   david.setStroke(color(255));
   //  println("david height=", david.height()/pxPerFt);
 
-  sails = loadShape("center - reduced.obj");
+  sails = loadShape("center.obj");
   sails.scale(pxPermm); // looks like it's in mm scale
   sails.setStroke(color(255));
   sails.setFill(color(255));
@@ -146,7 +153,11 @@ void setup() {
   //  client.subscribe("nyc/Distance/#");
 
   // set frame rate
-  frameRate(10);
+  frameRate(15);
+
+  float cameraZ = ((height/2/2.0) / tan(PI*60.0/360.0)); // defaults
+  perspective(radians(90), width/height, cameraZ/10.0, cameraZ*10.0); // defaults
+  System.out.println("w: " + width + " h: " + height);
 
   camera = new PeasyCam(this, 0, 0, 0, canvasSize);
   bindCamera(0);
@@ -168,21 +179,7 @@ void draw() {
   // camera settings
   lights();
 
-  //  ortho(-width/2.0, width/2.0, -height/2.0, height/2.0);
-  //  float cameraZ = ((height/2/2.0) / tan(PI*60.0/360.0)); // defaults
-  //  perspective(PI/3.0, width/height, cameraZ/10.0, cameraZ*10.0); // defaults
 
-  // set (0,0) in the center
-  //translate(width/2, height/2, 0);
-
-  //  angle += PI/300;
-  /*
-  camera(
-   sin(radians(viewRot))*canvasSize*viewZoom, cos(radians(viewRot))*canvasSize*viewZoom, (height/2.0) / tan(PI*viewAng/180.0),
-   0, 0, 0,
-   0, 0, -1
-   );
-   */
   // denote extents and boundaries with dark lines
   noFill();
   stroke(64);
@@ -270,17 +267,35 @@ void keyPressed() {
 
 public void keyReleased() {
   switch(key) {
-  case 'p' : 
-    printState(camera); 
-    break;
+    case 'v':
+       printState(camera);
+       break;
   case '1' : 
     bindCamera(0); 
     break;
   case '2' : 
     bindCamera(1); 
     break;
+  case '3' : 
+    bindCamera(2); 
+    break;
+  case 'q':
+     rotZ += -0.1f;
+     System.out.println("rotZ: " + rotZ);
+     break;
+  case 'w':
+     rotZ += 0.1f;
+     System.out.println("rotZ: " + rotZ);
+     break;
   case 'r' : 
     camera.reset(); 
+    break;
+  case 'o':
+    ortho(-width/2.0, width/2.0, -height/2.0, height/2.0);
+    break;
+  case 'p':
+    float cameraZ = ((height/2/2.0) / tan(PI*60.0/360.0)); // defaults
+    perspective(radians(90), width/height, cameraZ/10.0, cameraZ*10.0); // defaults
     break;
   case 'm' : 
     if ( !recordMovie ) {
@@ -298,6 +313,9 @@ public void keyReleased() {
       recordMovie = false;
     }
     break;
+  case 's':
+     saveFrame();
+     break;
   }
 }
 
@@ -313,12 +331,51 @@ void bindCamera(int view) {
   camera.setState(viewpoints[view], 500);
 }
 
-void drawSails() {
+void drawSailsOld() {
   pushMatrix();
   translate(0, 0, -deckHeight+1*pxPerFt);
   rotateZ(-PI/6);
   shape(sails);
   popMatrix();
+}
+
+float rotZ = 2.0f;
+
+void drawSails() {
+  float r = 3*pxPerFt;
+
+  float x = (float) (r * Math.cos(2*PI/3));
+  float y = (float) (r * Math.sin(2*PI/3));  
+  
+  pushMatrix();
+  rotateZ(1.5);
+  pushMatrix();
+  
+  translate(r, 0, -deckHeight+1*pxPerFt);
+  rotateZ(-1.5);
+  shape(sails);
+  popMatrix();
+
+  x = (float) (r * Math.cos(2*PI/3));
+  y = (float) (r * Math.sin(2*PI/3));  
+
+  pushMatrix();
+  translate(x, y, -deckHeight+1*pxPerFt);
+  rotateZ(0.4f);
+  shape(sails);
+  popMatrix();
+  
+  x = (float) (r * Math.cos(-2*PI/3));
+  y = (float) (r * Math.sin(-2*PI/3));  
+
+  pushMatrix();
+  translate(x, y, -deckHeight+1*pxPerFt);
+  rotateZ(2.6);
+  shape(sails);
+  popMatrix();
+  
+  popMatrix();
+  
 }
 
 void drawDavid() {
@@ -356,6 +413,7 @@ void drawLeg(boolean isUp, int sN) {
   translate(-olegS1/2, +olegH/2, 0);
   rotateZ(radians(90)-asin(olegS1/olegH));
   box(olegH, legThick, legThick);
+
 
   if ( isUp ) translate(-olegH/2.0, 0, -legThick/2.0);
   else translate(-olegH/2.0, +legThick/2.0, 0);
@@ -427,6 +485,7 @@ void drawSepal(int sN) {
   popMatrix();
 
   // legs
+
   pushMatrix();
   drawLeg(true, sN);
   rotate(radians(360/6));
@@ -446,7 +505,8 @@ void drawSepal(int sN) {
   translate(0, 0, +deckHeight);
   rotateZ(radians(-30));
   polygon(sepalRadius, 3);  // Triangle
-
+  
+/*  // Commented out for now, Kyle not sure they are necessary 
   // lines
   strokeWeight(1.0/12.0*pxPerFt);
   stroke(255);
@@ -457,7 +517,7 @@ void drawSepal(int sN) {
   line(0, olegDisp+deckLength/2.0, 0, 0, olegDisp+deckLength/2.0, -2.0*deckHeight);
   rotateZ(radians(360/3));
   line(0, olegDisp+deckLength/2.0, 0, 0, olegDisp+deckLength/2.0, -2.0*deckHeight);
-
+*/
   strokeWeight(1.0);
   stroke(0);
 
