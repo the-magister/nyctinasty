@@ -12,6 +12,8 @@ static final float flowerRadius = 6*pxPerFt; // footprint of the centerpiece
 // thickness for extrusions
 static final float deckThick = 5.5/12.0*pxPerFt; // 2x6 is 5.5" deep
 static final float legThick = 3.5/12.0*pxPerFt; // 4x4 is 3.5" thick
+static final float stepThick = 1.5/12.0*pxPerFt; // 2x4 is 1.5" x 3.5"
+static final float stepHeight = 3.5/12.0*pxPerFt; // 2x4 is 1.5" x 3.5"
 
 // deck dimensions
 static final float deckHeight = 8*pxPerFt;
@@ -37,6 +39,7 @@ static final float olegS2 = deckHeight/cos(olegAng);
 static final float olegH = sqrt(pow(olegS1, 2.0)+pow(olegS2, 2.0));
 static final float olegAngPoint = acos(olegS2/olegH)*2;
 static final float olegAngWide = (radians(180.0)-olegAngPoint)/2.0;
+static final float olegStepSpacing = 1*pxPerFt;
 
 // footprint of the sepal
 static final float sepalRadius = deckLength/2.0+olegDisp;
@@ -57,6 +60,7 @@ MQTTClient client;
 // accumulate distance information vai mqtt
 float[][][] dist = new float[N_SEPAL][N_ARCH][N_SENSOR];
 
+boolean showCenter = true;
 // a human for reference
 PShape david;
 
@@ -78,7 +82,8 @@ CameraState[] viewpoints = new CameraState[] {
 //  new CameraState(new Rotation(RotationOrder.XYZ, -0.913286f, 0.019479f, 0.018596f), new Vector3D(0, 0, 0), 800), 
   new CameraState(new Rotation(RotationOrder.XYZ, -1.1605f, 0.020477f, 0.023135), new Vector3D(0, 0, 0), 800), 
   new CameraState(new Rotation(RotationOrder.XYZ, 0, 0f, 0f), new Vector3D(0, 0, 0), 1200),
-  new CameraState(new Rotation(RotationOrder.XYZ, -PI/2, 0f, 0f), new Vector3D(0, 0, 0), 1200)
+  new CameraState(new Rotation(RotationOrder.XYZ, -PI/2, 0f, 0f), new Vector3D(0, 0, 0), 1200),
+  new CameraState(new Rotation(RotationOrder.XYZ,-1.907721,-0.997953,-0.063794), new Vector3D(0,0,0),745.10147)
 };
 
 // movie-making
@@ -92,7 +97,6 @@ void settings() {
   int w = (int) Math.min((displayWidth * 0.8f),displayHeight*0.8f);
   int h = (int) (w * 120 / 124f);  // aspect ratio of human field of view
   
-  System.out.println("w: " + w + " h: " + h);
   size(w, h, P3D);
 }
 
@@ -124,7 +128,7 @@ void setup() {
   print(" wide angle=", degrees(olegAngWide));
   print(" splay angle=", degrees(olegAng));
   println();
-
+  
   print("sepal: ");
   print(" diameter=", sepalRadius*2.0/pxPerFt);
   float triSide = (deckWidth + 2.0*sqrt(pow(deckWidth/2.0, 2.0)+pow(olegDisp, 2.0)));
@@ -133,20 +137,22 @@ void setup() {
   println();
 
 
-  david = loadShape("scan-the-world-michelangelo-s-david - reduced.obj");
-  //  david.scale(0.5);
-  david.rotateZ(radians(180));
-  david.scale(1.0/395.04*(69.7/12.0)*pxPerFt); // object is ~395 mm, and we want 69.7 in, average male height in NA
-  //  david.scale(1.0/2.9);
-  david.setFill(color(255));
-  david.setStroke(color(255));
-  //  println("david height=", david.height()/pxPerFt);
-
-  sails = loadShape("center.obj");
-  sails.scale(pxPermm); // looks like it's in mm scale
-  sails.setStroke(color(255));
-  sails.setFill(color(255));
-
+  if (showCenter) {
+    david = loadShape("scan-the-world-michelangelo-s-david - reduced.obj");
+    //  david.scale(0.5);
+    david.rotateZ(radians(180));
+    david.scale(1.0/395.04*(69.7/12.0)*pxPerFt); // object is ~395 mm, and we want 69.7 in, average male height in NA
+    //  david.scale(1.0/2.9);
+    david.setFill(color(255));
+    david.setStroke(color(255));
+    //  println("david height=", david.height()/pxPerFt);
+  
+    sails = loadShape("center.obj");
+    sails.scale(pxPermm); // looks like it's in mm scale
+    sails.setStroke(color(255));
+    sails.setFill(color(255));  
+  }
+  
   // mqtt 
   client = new MQTTClient(this);
   //  client.connect("mqtt://192.168.4.1", "visualize");
@@ -157,10 +163,9 @@ void setup() {
 
   float cameraZ = ((height/2/2.0) / tan(PI*60.0/360.0)); // defaults
   perspective(radians(90), width/height, cameraZ/10.0, cameraZ*10.0); // defaults
-  System.out.println("w: " + width + " h: " + height);
 
   camera = new PeasyCam(this, 0, 0, 0, canvasSize);
-  bindCamera(0);
+  bindCamera(3);
 }
 
 // https://processing.org/tutorials/p3d/
@@ -185,7 +190,7 @@ void draw() {
   stroke(64);
 
   // use David as a reference.  
-  drawDavid();
+  if (showCenter) drawDavid();
 
   // show outlines
   drawOutlines();
@@ -194,7 +199,7 @@ void draw() {
   fill(255);
   stroke(0);
 
-  drawSails();
+  if (showCenter) drawSails();
 
   drawSepal(0);
 
@@ -279,6 +284,9 @@ public void keyReleased() {
   case '3' : 
     bindCamera(2); 
     break;
+  case '4':
+     bindCamera(3);
+     break;
   case 'q':
      rotZ += -0.1f;
      System.out.println("rotZ: " + rotZ);
@@ -397,6 +405,19 @@ void drawLeg(boolean isUp, int sN) {
   rotateX(-angle);
 
   box(olegS1*2, legThick, legThick);
+  
+  // Draw steps
+  pushMatrix();
+  float ang = (float)Math.sin(olegS1/olegS2);
+
+  for(int i=0; i < 7; i++) {
+    translate(0, +olegStepSpacing, 0);
+    
+    float w = (float) Math.tan(ang) * (olegH - (i+1) * olegStepSpacing);
+    box(w*2, stepHeight, stepThick);
+  }
+
+  popMatrix();
 
   pushMatrix();
   translate(+olegS1/2, +olegH/2, 0);
