@@ -31,7 +31,7 @@ void NyctComms::begin(NyctRole role, boolean resetRole) {
 	this->role = role;
 	getsetEEPROM(this->role, resetRole);
 	String s = (this->sepal == N_SEPAL) ? "" : ("-" + String(this->sepal, 10) );
-	String a = (this->arch == N_ARCH) ? "" : ("-" + String(this->arch, 10) );
+	String a = (this->side == N_SIDE) ? "" : ("-" + String(this->side, 10) );
 	myName = "nyc-" + NyctRoleString[this->role] + s + a;
 
 	// comms setup
@@ -94,17 +94,17 @@ void NyctComms::subscribe(SimonSystemState *storage, boolean *trueWithUpdate) {
 		(void *)storage, trueWithUpdate, 0
 	);
 }
-void NyctComms::subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t archNumber) {
+void NyctComms::subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t sideNumber) {
 	String s = String( (sepalNumber == MY_INDEX) ? this->sepal : sepalNumber, 10 );
-	String a = String( (archNumber == MY_INDEX) ? this->arch : archNumber, 10 );
+	String a = String( (sideNumber == MY_INDEX) ? this->side : sideNumber, 10 );
 	subscribe(
 		distanceString + sep + s + sep + a, 
 		(void *)storage, trueWithUpdate, 0
 	);
 }
-void NyctComms::subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t archNumber) {
+void NyctComms::subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t sideNumber) {
 	String s = String( (sepalNumber == MY_INDEX) ? this->sepal : sepalNumber, 10 );
-	String a = String( (archNumber == MY_INDEX) ? this->arch : archNumber, 10 );
+	String a = String( (sideNumber == MY_INDEX) ? this->side : sideNumber, 10 );
 	subscribe(
 		frequencyString + sep + s + sep + a, 
 		(void *)storage, trueWithUpdate, 0
@@ -112,29 +112,29 @@ void NyctComms::subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, 
 }
 
 // publications.  cover the messages in Nyctinasty_Messages.h
-boolean NyctComms::publish(SimonSystemState *storage) {
-	return publish(
-		simonString, 
-		(uint8_t *)storage, (unsigned int)sizeof(SimonSystemState)
-	);
-}
 boolean NyctComms::publish(SystemCommand *storage) {
 	return publish(
 		settingsString, 
 		(uint8_t *)storage, (unsigned int)sizeof(SystemCommand)
 	);
 }
-boolean NyctComms::publish(SepalArchDistance *storage, uint8_t sepalNumber, uint8_t archNumber) {
+boolean NyctComms::publish(SimonSystemState *storage) {
+	return publish(
+		simonString, 
+		(uint8_t *)storage, (unsigned int)sizeof(SimonSystemState)
+	);
+}
+boolean NyctComms::publish(SepalArchDistance *storage, uint8_t sepalNumber, uint8_t sideNumber) {
 	String s = String( (sepalNumber == MY_INDEX) ? this->sepal : sepalNumber, 10 );
-	String a = String( (archNumber == MY_INDEX) ? this->arch : archNumber, 10 );
+	String a = String( (sideNumber == MY_INDEX) ? this->side : sideNumber, 10 );
 	return publish(
 		distanceString + sep + s + sep + a, 
 		(uint8_t *)storage, (unsigned int)sizeof(SepalArchDistance)
 	);
 }
-boolean NyctComms::publish(SepalArchFrequency *storage, uint8_t sepalNumber, uint8_t archNumber) {
+boolean NyctComms::publish(SepalArchFrequency *storage, uint8_t sepalNumber, uint8_t sideNumber) {
 	String s = String( (sepalNumber == MY_INDEX) ? this->sepal : sepalNumber, 10 );
-	String a = String( (archNumber == MY_INDEX) ? this->arch : archNumber, 10 );
+	String a = String( (sideNumber == MY_INDEX) ? this->side : sideNumber, 10 );
 	return publish(
 		frequencyString + sep + s + sep + a, 
 		(uint8_t *)storage, (unsigned int)sizeof(SepalArchFrequency)
@@ -198,14 +198,16 @@ void NyctComms::reprogram(String binaryName) {
 	}
 }
 byte NyctComms::getSepal() { return this->sepal; }
-byte NyctComms::getArch() { return this->arch; }
+byte NyctComms::getSide() { return this->side; }
+byte NyctComms::getSideNext() { return (byte)( ((int)this->side+1) % (int)N_SIDE ); }
+byte NyctComms::getSidePrev() { return (byte)( ((int)this->side-1) % (int)N_SIDE ); }
 
 // private methods
 
 typedef struct {
 	NyctRole role; 
 	byte sepal;
-	byte arch;
+	byte side;
 	char wifiPassword[20];
 } EEPROMstruct;
 
@@ -237,10 +239,10 @@ void NyctComms::getsetEEPROM(NyctRole role, boolean resetRole) {
 		m = Serial.readString();
 		save.sepal = (byte)m.toInt();
 		
-		Serial << F("Enter Arch [0-2], ") << N_ARCH << F(" for N/A.") << endl;
+		Serial << F("Enter Side [0-5], ") << N_SIDE << F(" for N/A.") << endl;
 		while(! Serial.available()) yield();
 		m = Serial.readString();
-		save.arch = (byte)m.toInt();
+		save.side = (byte)m.toInt();
 
 		Serial << F("Enter WiFi Password. ") << endl;
 		while(! Serial.available()) yield();
@@ -254,14 +256,14 @@ void NyctComms::getsetEEPROM(NyctRole role, boolean resetRole) {
 
 	this->role = save.role;
 	this->sepal = save.sepal;
-	this->arch = save.arch;
+	this->side = save.side;
 	this->wifiPassword = save.wifiPassword;
 	
 	Serial << F("Role information in EEPROM:");
 	Serial << F(" role=") << this->role;
 	Serial << F(" (") << NyctRoleString[this->role] << F(")");
 	Serial << F(" sepal=") << this->sepal;
-	Serial << F(" arch=") << this->arch;
+	Serial << F(" side=") << this->side;
 	Serial << F(" wifiPassword=") << this->wifiPassword;
 	Serial << endl;
 

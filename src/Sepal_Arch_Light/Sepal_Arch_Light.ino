@@ -18,10 +18,7 @@
 #include "Nyctinasty_Comms.h"
 
 // wire it up
-//#define DATA_PIN_LeftDown D5
-//#define DATA_PIN_RightDown D6
-//#define DATA_PIN_RightUp D7
-//#define DATA_PIN_LeftUp D8
+// D5..D8 used
 
 // comms
 NyctComms comms;
@@ -41,30 +38,21 @@ NyctRole role = Light;
 struct sC_t { boolean hasUpdate=false; SystemCommand settings; } sC;
 
 // incoming message storage and flag for update
-struct sAD_t { boolean hasUpdate=false; SepalArchDistance dist; } sAD;
-
-// incoming message storage and flag for update
-struct sAF_t { boolean hasUpdate=false; SepalArchFrequency freq; } sAF;
+struct sAF_t { boolean hasUpdate=false; SepalArchFrequency freq; } sAF[N_ARCH];
 
 // color choices, based on arch and sepal information
-byte archHue, archSat;
+byte archHue[N_ARCH] = {HUE_RED, HUE_GREEN, HUE_BLUE};
+byte archSat[N_ARCH] = {128, 128, 128};
 
 // our internal storage, mapped to the hardware.
 // pay no attention to the man behind the curtain.
 #define NUM_PINS 4
-#define N_LEDS 16
-#define LEDS_PER_PIN (N_LEDS+N_SENSOR/2)
+#define LEDS_PER_PIN 20
 CRGB leds[NUM_PINS * LEDS_PER_PIN];
-CRGBSet ledsLeftDown(&leds[0 * LEDS_PER_PIN], LEDS_PER_PIN);
-CRGBSet ledsLeftUp(&leds[1 * LEDS_PER_PIN], LEDS_PER_PIN);
-CRGBSet ledsRightDown(&leds[2 * LEDS_PER_PIN], LEDS_PER_PIN);
-CRGBSet ledsRightUp(&leds[3 * LEDS_PER_PIN], LEDS_PER_PIN);
-
-// ease accessing portions of the hardware
-CRGBSet leftDown(&ledsLeftDown[N_SENSOR / 2], N_LEDS);
-CRGBSet leftUp(&ledsLeftUp[N_SENSOR / 2], N_LEDS);
-CRGBSet rightDown(&ledsRightDown[N_SENSOR / 2], N_LEDS);
-CRGBSet rightUp(&ledsRightUp[N_SENSOR / 2], N_LEDS);
+CRGBSet left(&leds[0 * LEDS_PER_PIN], LEDS_PER_PIN); // D5
+CRGBSet right(&leds[1 * LEDS_PER_PIN], LEDS_PER_PIN); // D6
+CRGBSet unused1(&leds[2 * LEDS_PER_PIN], LEDS_PER_PIN); // D7
+CRGBSet unused2(&leds[3 * LEDS_PER_PIN], LEDS_PER_PIN); // D8
 
 #define COLOR_ORDER RGB
 #define COLOR_CORRECTION TypicalLEDStrip
@@ -77,26 +65,17 @@ void setup() {
   // start comms
   comms.begin(role);
 
-  // lighting choice
-  archHue = (256/N_ARCH) * comms.getArch();
-  archSat = 128;
-
   // subscribe
   comms.subscribe(&sC.settings, &sC.hasUpdate); 
-  comms.subscribe(&sAD.dist, &sAD.hasUpdate); 
-  comms.subscribe(&sAF.freq, &sAF.hasUpdate); 
+  for ( byte i = 0; i < N_ARCH; i++ ) {
+    comms.subscribe(&sAF[i].freq, &sAF[i].hasUpdate, comms.getSepal(), i*2);
+  }
 
-  //  FastLED.addLeds<WS2811, DATA_PIN_LeftDown, RGB>(ledsLeftDown, ledsLeftDown.size()).setCorrection(COLOR_CORRECTION);
-  //  FastLED.addLeds<WS2811, DATA_PIN_RightDown, RGB>(ledsRightDown, ledsRightDown.size()).setCorrection(COLOR_CORRECTION);
-  //  FastLED.addLeds<WS2811, DATA_PIN_LeftUp, RGB>(ledsLeftUp, ledsLeftUp.size()).setCorrection(COLOR_CORRECTION);
-  //  FastLED.addLeds<WS2811, DATA_PIN_RightUp, RGB>(ledsRightUp, ledsRightUp.size()).setCorrection(COLOR_CORRECTION);
-  FastLED.addLeds<WS2811_PORTA, NUM_PINS, RGB>(leds, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
+  // lights
+  FastLED.addLeds<WS2811_PORTA, NUM_PINS, COLOR_ORDER>(leds, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
   FastLED.setBrightness(255);
-
-//  runStartupPattern();
-
-  FastLED.clear();
-  FastLED.show();
+  runStartupPattern();
+  
 }
 
 void loop() {
@@ -136,44 +115,39 @@ void idle() {
   static byte hue = 0;
 
   EVERY_N_MILLISECONDS(20) {
-    // show a throbbing rainbow on the legs
+    // show a throbbing rainbow background
     hue++;
-    leftDown.fill_rainbow(hue, 255 / leftDown.size()); // paint
-    rightDown.fill_rainbow(hue + 128, -255 / rightDown.size());
-
-    // trails on the ups
+    left.fill_rainbow(hue, 255 / left.size()); // paint
+    right.fill_rainbow(hue + 128, -255 / right.size());
+    
+    /*
+    // trails
     const byte bpm = 16; // bpm (rate of dot travel), 1/minute
-    leftUp.fadeToBlackBy(bpm);
-    rightUp.fadeToBlackBy(bpm);
+    le.fadeToBlackBy(bpm);
+    ledsD.fadeToBlackBy(bpm);
     // set the speed the pixel travels, see: lib8tion.h
-    const uint16_t endUp = rightUp.size() - 1;
+    const uint16_t endUp = ledsC.size() - 1;
     uint16_t posVal = beatsin16(bpm, 0, (uint16_t)endUp);
 
     // paint
-    leftUp[posVal] = CHSV(hue, 255, 255);
+    ledsC[posVal] = CHSV(hue, 255, 255);
     // mirrored direction and hue
-    rightUp[endUp - posVal] = CHSV(hue + 128, 255, 255);
+    ledsD[endUp - posVal] = CHSV(hue + 128, 255, 255);
+    */
   }
 
 }
 
 void normal() {
-  // check for an update to distance
-  if ( sAD.hasUpdate ) {
-    // map distance to lights
-    mapDistanceToBar();
-
-    // reset
-    sAD.hasUpdate = false;
-  }
-
   // check for an update to frequency
-  if ( sAF.hasUpdate ) {
-    // map frequency to legs
-    mapFreqToLegs();
+  for ( byte i = 0; i < N_ARCH; i++ ) {
+    if ( sAF[i].hasUpdate ) {
+      // map frequency to legs
+      mapFreqToLegs();
 
-    // reset
-    sAF.hasUpdate = false;
+      // reset
+      sAF[i].hasUpdate = false;
+    }
   }
 }
 
@@ -182,6 +156,7 @@ void central() {
   // https://github.com/ppelleti/esp-opc-server/blob/master/esp-opc-server.ino
 }
 
+// total GARBAGE
 void mapFreqToLegs() {
   uint16_t avgPower[N_SENSOR] = {0};
   // frequency power
@@ -192,7 +167,7 @@ void mapFreqToLegs() {
   uint32_t maxSum = 0;
   for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
     for ( byte i = 0; i < N_SENSOR; i++ ) {
-      sumSensors[j] += sAF.freq.power[i][j];
+      sumSensors[j] += sAF[0].freq.power[i][j];
     }
     if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
   }
@@ -205,33 +180,10 @@ void mapFreqToLegs() {
                           (uint32_t)0, (uint32_t)255
                         );
     Serial << value << ",";
-    leftDown[j % N_LEDS] = CHSV(archHue, archSat, brighten8_video(constrain(value, 0, 255)));
+    left[j % LEDS_PER_PIN] = CHSV(archHue[0], archSat[0], brighten8_video(constrain(value, 0, 255)));
   }
   Serial << endl;
-  rightDown = leftDown;
-}
-
-void mapDistanceToBar() {
-  CRGBArray<N_SENSOR> bar;
-  const uint16_t halfBar = bar.size() / 2 - 1;
-  const uint16_t fullBar = bar.size() - 1;
-
-  for ( byte i = 0; i < N_SENSOR; i++ ) {
-    uint16_t intensity = map(
-                           sAD.dist.prox[i] > sAD.dist.noise ? sAD.dist.prox[i] : 0,
-                           sAD.dist.min, sAD.dist.max,
-                           (uint16_t)0, (uint16_t)255
-                         );
-    bar[i % N_SENSOR] = CHSV(archHue, archSat, (byte)intensity);
-  }
-
-  // arch bar update
-  ledsLeftDown(halfBar, 0) = bar(0, halfBar);
-  ledsRightDown(0, halfBar) = bar(halfBar + 1, fullBar);
-  // mirror bar
-  ledsLeftUp(0, halfBar) = ledsLeftDown(0, halfBar);
-  ledsRightUp(0, halfBar) = ledsRightDown(0, halfBar);
-
+  right = left;
 }
 
 void pushToHardware() {
@@ -247,62 +199,19 @@ void pushToHardware() {
 
 void runStartupPattern() {
   // find the pins
-  ledsLeftDown.fill_solid(CRGB::Red);
+  left.fill_solid(CRGB::Purple);
+  right.fill_solid(CRGB::Aqua);
+  unused1.fill_solid(CRGB::Red);
+  unused2.fill_solid(CRGB::Red);
   FastLED.show();
   delay(333);
 
-  ledsLeftUp.fill_solid(CRGB::Blue);
+  left.fill_solid(CRGB::Black);
+  right.fill_solid(CRGB::Black);
+  unused1.fill_solid(CRGB::Black);
+  unused2.fill_solid(CRGB::Black);
   FastLED.show();
   delay(333);
-
-  ledsRightDown.fill_solid(CRGB::Green);
-  FastLED.show();
-  delay(333);
-
-  ledsRightUp.fill_solid(CRGB::Purple);
-  FastLED.show();
-  delay(333);
-
-  ledsLeftDown.fill_solid(CRGB::Black);
-  ledsRightDown.fill_solid(CRGB::Black);
-  ledsLeftUp.fill_solid(CRGB::Black);
-  ledsRightUp.fill_solid(CRGB::Black);
-  FastLED.show();
-  delay(333);
-
-  // find the bar
-  CRGBArray<N_SENSOR> bar;
-  const uint16_t halfBar = bar.size() / 2 - 1;
-  const uint16_t fullBar = bar.size() - 1;
-  for ( byte i = 0; i < N_SENSOR; i++ ) {
-    bar.fill_solid(CRGB::Black);
-    bar[i] = CRGB::Green;
-
-    ledsLeftDown(halfBar, 0) = bar(0, halfBar);
-    ledsRightDown(0, halfBar) = bar(halfBar + 1, fullBar);
-    // mirror bar
-    ledsLeftUp(0, halfBar) = ledsLeftDown(0, halfBar);
-    ledsRightUp(0, halfBar) = ledsRightDown(0, halfBar);
-    FastLED.show();
-    delay(333);
-  }
-
-  // down lights update
-  leftDown.fill_solid(CRGB::Black);
-  leftDown[0] = CRGB::Green;
-  leftDown[leftDown.size()-1] = CRGB::Red;
-  rightDown = leftDown;
-  FastLED.show();
-  delay(333);
-
-  // up lights update
-  leftUp.fill_solid(CRGB::Black);
-  leftUp[0] = CRGB::Green;
-  leftUp[leftUp.size()-1] = CRGB::Red;
-  rightUp = leftUp;
-  FastLED.show();
-  delay(333);
-
 }
 
 

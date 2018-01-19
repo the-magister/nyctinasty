@@ -10,6 +10,8 @@
 #include <SoftwareSerial.h>
 #include <SoftEasyTransfer.h>
 #include <FiniteStateMachine.h>
+#define FASTLED_INTERRUPT_RETRY_COUNT 1
+#include <FastLED.h>
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
 
@@ -19,6 +21,16 @@
 // voltage divider: 5V->3.3V
 // TX to RX_ESP via 820 Ohm resistor
 // RX_ESP to GND via 1500 Ohm resistor
+#define LED_PIN D8
+
+// LED handling
+#define N_LEDS N_SENSOR*2
+#define COLOR_ORDER RGB
+#define COLOR_CORRECTION TypicalLEDStrip
+CRGB leds[N_LEDS];
+
+// color choices, based on arch and sepal information
+byte archHue, archSat;
 
 // comms
 NyctComms comms;
@@ -67,8 +79,16 @@ void setup() {
   // start comms
   comms.begin(role);
 
+  // lighting choice
+  archHue = (256/N_SIDE) * comms.getSide();
+  archSat = 128;
+
   // subscribe
   comms.subscribe(&sC.settings, &sC.hasUpdate);
+
+  FastLED.addLeds<WS2811, LED_PIN, COLOR_ORDER>(leds, N_LEDS).setCorrection(COLOR_CORRECTION);
+  FastLED.setBrightness(255);
+  runStartupPattern();
  
   Serial << F("Startup complete") << endl;
 }
@@ -115,11 +135,17 @@ void normal() {
      distance -> distance etc.
   */
 
+  // try to update the LEDs outside of WiFi and SoftwareSerial updates
+  static Metro updateLedDelay(distanceSampleRate/3UL); // push LEDs ~6ms after last WiFi transmit
+  static boolean updateLed = false;
+  
   // read ADCs
   if ( ETin.receiveData() ) {
     // ship it
     comms.publish(&dist);
-
+    updateLedDelay.reset();
+    updateLed = true;
+      
     // fill buffer
     fillBuffer();
 
@@ -144,13 +170,70 @@ void normal() {
       publishReady = false;
       // publish
       comms.publish(&freq);
+      updateLedDelay.reset();
     }
+  } 
 
+  // possibly update LEDs
+  if( updateLed && updateLedDelay.check() ) {
+    updateLed = false;
+    
   }
 }
 void central() {
   // NOP
 }
+
+// startup pattern on lights
+void runStartupPattern() {
+  // message information
+  dist.min = 0;
+  dist.max = 1023;
+  dist.noise = 50;
+  
+  // zero out distances
+  for( byte i=0; i<N_SENSOR; i++ ) dist.prox[i] = dist.min;
+
+  // move lights up the bar
+  for( byte i=0; i<N_SENSOR; i++ ) {
+    dist.prox[i] = dist.max;
+    mapDistanceToBar();
+    pushToHardware();
+    dist.prox[i] = dist.min;
+    delay(300);
+  }
+}
+
+// adjust lights
+void mapDistanceToBar() {
+  // ease indexing into loop installation
+  const byte lightIndex1[N_SENSOR] = {3,  2,  1,  0, 15, 14, 13, 12};
+  const byte lightIndex2[N_SENSOR] = {4,  5,  6,  7,  8,  9, 10, 11};
+
+  for ( byte i = 0; i < N_SENSOR; i++ ) {
+    // quash noise
+    if( dist.prox[i] < dist.noise ) dist.prox[i] = dist.min;
+    uint16_t intensity = map(
+                           dist.prox[i],
+                           dist.min, dist.max,
+                           (uint16_t)0, (uint16_t)255
+                         );
+    leds[lightIndex1[i]] = CHSV(archHue, archSat, (byte)intensity);
+    leds[lightIndex2[i]] = leds[lightIndex1[i]];
+  }
+}
+
+// show
+void pushToHardware() {
+  FastLED.show();
+
+  // show our frame rate, periodically
+  EVERY_N_SECONDS( 5 ) {
+    uint16_t reportedFPS = FastLED.getFPS();
+    Serial << F("FPS reported (Hz): ") << reportedFPS << endl;
+  }
+}
+
 // storage
 void fillBuffer() {
   // track the buffer index

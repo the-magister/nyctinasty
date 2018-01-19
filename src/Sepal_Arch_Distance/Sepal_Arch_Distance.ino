@@ -4,6 +4,11 @@
 
 // This uC simply samples the distance sensors as quickly as possible,
 // then trasmits to Sepal_Arch_Freq over serial every distanceSampleRate ms.
+//
+// Code is intentionally "dumb as a brick".  No OTA update is possible to this uC, so
+// we need this codebase to be stable and bullet-proof.
+
+#define SHOW_SERIAL_DEBUG false
 
 #include <Streaming.h>
 #include <Metro.h>
@@ -37,7 +42,6 @@ void setup() {
   Serial.begin(115200);
 
   // for remote output
-  //  mySerial.begin(57600);
   mySerial.begin(115200);
 
   // messages
@@ -63,15 +67,15 @@ void setup() {
 }
 
 // this is an ISR, so needs to be quick.
-uint16_t smoothing = 1;
-volatile uint16_t count = 0;
+uint32_t smoothing = 1;
+volatile uint32_t count = 1; // intentional 1 index.
 void ISR_getValue(int index, int pin, int value) {
   // anything that could be changed by this ISR should be volatile
   byte ri = A7 - pin;
   
   // exponential smoothing
-  uint32_t smoothed =((uint32_t)dist.prox[ri] * (uint32_t)(smoothing - 1) + (uint32_t)value) / (uint32_t)smoothing; 
-  dist.prox[ri] = smoothed;
+  uint32_t smoothed =((uint32_t)dist.prox[ri] * (smoothing - 1) + (uint32_t)value) / smoothing; 
+  dist.prox[ri] = (uint16_t)smoothed;
   
   // increment read counter
   count++;
@@ -80,14 +84,17 @@ void ISR_getValue(int index, int pin, int value) {
 // send sensor dist
 void sendDistance() {
 
-  const char sep[] = ",";
-  for ( byte i = 0; i < N_SENSOR; i++ ) Serial << dist.prox[i] << sep;
+  if( SHOW_SERIAL_DEBUG ) {
+    const char sep[] = ",";
 
-  Serial << dist.min << sep;
-  Serial << dist.noise << sep;
-  Serial << dist.max << sep;
-  Serial << smoothing << sep;
-  Serial << endl;
+    for ( byte i = 0; i < N_SENSOR; i++ ) Serial << dist.prox[i] << sep;
+  
+    Serial << dist.min << sep;
+    Serial << dist.noise << sep;
+    Serial << dist.max << sep;
+    Serial << smoothing << sep;
+    Serial << endl;
+  }
 
   // ship it.
   ETout.sendData();
@@ -101,12 +108,10 @@ void sendDistance() {
 void loop() {
   if ( sendInterval.check() ) {
     // track updates per send loop, and adjust smoothing,
-    // taking care to never allow smoothing=0 that could be used in the ISR whenever
-    const uint16_t smoothMult = 4;
-    uint16_t newSmoothing = (smoothMult*count) / (uint16_t)N_SENSOR;
-    if ( newSmoothing < 1 ) newSmoothing = 1;
-    smoothing = newSmoothing;
-    count = 0;
+    // reset count=1 to never allow smoothing=0 that could be used in the ISR whenever
+    const uint32_t smoothMult = 4;
+    smoothing = (smoothMult*count) / (uint32_t)N_SENSOR;
+    count = 1;
 
     // send readigns
     sendDistance();

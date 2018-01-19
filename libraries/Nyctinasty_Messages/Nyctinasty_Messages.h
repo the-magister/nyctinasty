@@ -32,8 +32,11 @@ typedef struct {
 // number of Sepals
 #define N_SEPAL 3
 
+// number of Sides per Sepal
+#define N_SIDE 6 // hexagon
+
 // number of Arches per Sepal
-#define N_ARCH 3
+#define N_ARCH (N_SIDE/2)
 
 // number of distance Sensors per Arch
 #define N_SENSOR 8

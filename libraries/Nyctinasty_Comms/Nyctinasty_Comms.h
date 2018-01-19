@@ -53,14 +53,14 @@ public:
 	// subscriptions. cover the messages in Nyctinasty_Messages.h
 	void subscribe(SystemCommand *storage, boolean *trueWithUpdate);
 	void subscribe(SimonSystemState *storage, boolean *trueWithUpdate);
-	void subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t sepalNumber=MY_INDEX, uint8_t archNumber=MY_INDEX);
-	void subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t sepalNumber=MY_INDEX, uint8_t archNumber=MY_INDEX);
+	void subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t sepalNumber=MY_INDEX, uint8_t sideNumber=MY_INDEX);
+	void subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t sepalNumber=MY_INDEX, uint8_t sideNumber=MY_INDEX);
 	
 	// publications.  cover the messages in Nyctinasty_Messages.h
 	boolean publish(SystemCommand *message);
 	boolean publish(SimonSystemState *message);
-	boolean publish(SepalArchDistance *message, uint8_t sepalNumber=MY_INDEX, uint8_t archNumber=MY_INDEX);
-	boolean publish(SepalArchFrequency *message, uint8_t sepalNumber=MY_INDEX, uint8_t archNumber=MY_INDEX);
+	boolean publish(SepalArchDistance *message, uint8_t sepalNumber=MY_INDEX, uint8_t sideNumber=MY_INDEX);
+	boolean publish(SepalArchFrequency *message, uint8_t sepalNumber=MY_INDEX, uint8_t sideNumber=MY_INDEX);
 	
 	// call this very frequently
 	void update();
@@ -71,12 +71,14 @@ public:
 	void reboot();
 	void reprogram(String binaryName);
 	byte getSepal();
-	byte getArch();
+	byte getSide();
+	byte getSideNext(); // clockwise
+	byte getSidePrev(); // counterclockwise
 	
 private:
 	// role and indexing
 	NyctRole role;
-	uint8_t sepal, arch;
+	uint8_t sepal, side;
 	void getsetEEPROM(NyctRole role, boolean resetRole);
 	
 	// WiFi
