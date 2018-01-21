@@ -1,3 +1,8 @@
+// IDE Settings:
+// Tools->Board : "WeMos D1 R2 & mini"
+// Tools->Flash Size : "4M (3M SPIFFS)"
+// Tools->CPU Frequency : "160 MHz"
+// Tools->Upload Speed : "921600"
 /*
 
   Welcome to C++.  It's not a very friendly place, admittedly, but I'll do everything I can to
@@ -40,9 +45,9 @@
 // the apparent brightness of "red" is far lower than "green" or "blue".  So, we
 // decrease the blue and green elements to compensate, running red at full.
 // **CHOOSE ONE**
-#define COLOR_CORRECTION TypicalLEDStrip // 0xFFB0F0
+//#define COLOR_CORRECTION TypicalLEDStrip // 0xFFB0F0
 //#define COLOR_CORRECTION Typical8mmPixel // 0xFFE08C
-//#define COLOR_CORRECTION UncorrectedColor // 0xFFFFFF
+#define COLOR_CORRECTION UncorrectedColor // 0xFFFFFF
 // or, roll your own hex code: rrggbb.  "FF" is full (16), which is what red should be set to.
 //#define COLOR_CORRECTION 0xFFB0F0
 
@@ -102,12 +107,12 @@ const CRGBPalette16 WinterPalette(
   CRGB::SkyBlue   // no comma after the 16th entry
 );
 const CRGBPalette16 SpringPalette(
-  CRGB::MidnightBlue,
-  CRGB::DarkBlue,
+  CRGB::LightSkyBlue,
+  CRGB::Teal,
   CRGB::MidnightBlue,
   CRGB::Navy,
 
-  CRGB::DarkBlue,
+  CRGB::CornflowerBlue,
   CRGB::MediumBlue,
   CRGB::SeaGreen,
   CRGB::Teal,
@@ -166,17 +171,17 @@ const CRGBPalette16 FallPalette(
 );
 
 // cycle palettes on an interval.  Set this to 600 for ten minutes, if you want to study the palette in detail
-byte secondsBetweenPaletteChange = 5; // seconds
+byte secondsBetweenPaletteChange = 60/4; // seconds
 
 // start with this palette
-byte startPalette = 0 % 4; // 0,1,2,3 are Winter,Spring,Summar,Fall respectively.
+byte startPalette = 0; // 0,1,2,3 are Winter,Spring,Summar,Fall respectively.
 
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // !!! EVERYTHING BELOW THIS LINE DOES NOT NEED TO BE CHANGED !!!
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 // some definitions
-#define LED_PIN     3
+#define LED_PIN     D8
 #define BRIGHTNESS  255
 #define LED_TYPE    WS2811
 #define COLOR_ORDER RGB
@@ -208,14 +213,8 @@ void loop() {
     setPalette(paletteIndex + 1);
 
   // update the lights
-  EVERY_N_MILLISECONDS( 5 ) {
-    static uint8_t startIndex = 0;
-    static uint8_t brightIndex = 128;
-
-    startIndex = startIndex + 1; /* motion speed */
-    brightIndex = brightIndex + 1; /* overall brightness speed */
-
-    fillLEDsFromPaletteColors(startIndex, brightIndex);
+  EVERY_N_MILLISECONDS( 20 ) {
+    fillLEDsFromPaletteColors();
   }
 
   // show it
@@ -226,26 +225,42 @@ void setPalette(byte i) {
   paletteIndex = i % 4;
 
   Serial << F("Setting palette to ");
-  switch (i) {
+  switch (paletteIndex) {
     case 0: Serial << "Winter"; break;
     case 1: Serial << "Spring"; break;
     case 2: Serial << "Summer"; break;
     case 3: Serial << "Fall"; break;
   }
-  Serial << endl;
+  Serial << F("[") << i << F("/") << paletteIndex << F("]") << endl;
+
+  // ramp down so we note palette change
+  for(int i=255; i>1; i--) {
+    FastLED.setBrightness(i);
+    FastLED.show();
+    FastLED.delay(5);
+  }
+  FastLED.setBrightness(BRIGHTNESS);
 }
 
-void fillLEDsFromPaletteColors(uint8_t colorIndex, uint8_t brightIndex) {
-  static int brightDir = +1;
+void fillLEDsFromPaletteColors() {
+//  byte bright = qadd8(
+//    beatsin8( brightCycle, 0, 255, 0, 0 ),
+//    16 // keep some brightness.
+//  );
+
+  static byte brightStart = 0;
+  byte brightDelta = 256/NUM_LEDS;
+    
+  static byte colorStart = 0;
+  byte colorDelta = 256/NUM_LEDS;
+  
   for ( int i = 0; i < NUM_LEDS; i++) {
-    leds[i] = ColorFromPalette( *palettes[paletteIndex], colorIndex, brightIndex, LINEARBLEND);
-
-    colorIndex += 1;
-
-    if ( brightDir == 1 && brightIndex == 255 ) brightDir = -1;
-    if ( brightDir == -1 && brightIndex == 0 ) brightDir = 1;
-
-    brightIndex += brightDir;
+    byte color = colorStart+colorDelta*i;
+    byte bright = qadd8(triwave8(brightStart+brightDelta*i), 16);
+     
+    leds[i] = ColorFromPalette( *palettes[paletteIndex], color, dim8_video(bright), LINEARBLEND);
   }
+  colorStart ++;
+  brightStart --;
 }
 
