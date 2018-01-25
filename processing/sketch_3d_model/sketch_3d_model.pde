@@ -91,6 +91,12 @@ import java.io.File;
 boolean recordMovie = false;
 String moviePath;
 int frameCount;
+int cameraAnimation = -1;  // The animated camera to use or -1 for none
+float acPos;
+long acStartTime;
+
+import damkjer.ocd.Camera;
+Camera acCamera;
 
 void settings() {
   // size based on object
@@ -165,7 +171,10 @@ void setup() {
   perspective(radians(90), width/height, cameraZ/10.0, cameraZ*10.0); // defaults
 
   camera = new PeasyCam(this, 0, 0, 0, canvasSize);
-  bindCamera(3);
+  camera.setWheelScale(0.1);
+  camera.setMaximumDistance(1200);
+
+  bindCamera(0);
 }
 
 // https://processing.org/tutorials/p3d/
@@ -178,6 +187,12 @@ void draw() {
     lastTime = currTime;
   }
 
+  if (cameraAnimation > -1) {
+     float d = 800f - ((currTime - acStartTime) / (10 * 1000f) * 400);
+     println("d: ",d);
+     camera.setDistance(d);
+   }
+   
   // background
   background(102);
 
@@ -287,19 +302,25 @@ public void keyReleased() {
   case '4':
      bindCamera(3);
      break;
+  case '9':
+     // Play overview movie
+     cameraAnimation = 1;
+     acPos = 800;
+     acStartTime = System.currentTimeMillis();
+     println("Starting animation");
+     break;
   case 'q':
      rotZ += -0.1f;
-     System.out.println("rotZ: " + rotZ);
      break;
   case 'w':
      rotZ += 0.1f;
-     System.out.println("rotZ: " + rotZ);
      break;
   case 'r' : 
     camera.reset(); 
     break;
   case 'o':
-    ortho(-width/2.0, width/2.0, -height/2.0, height/2.0);
+//    ortho(-width/2.0, width/2.0, -height/2.0, height/2.0);
+    ortho(-width/1.25, width/1.25, -height/1.25, height/1.25);
     break;
   case 'p':
     float cameraZ = ((height/2/2.0) / tan(PI*60.0/360.0)); // defaults
@@ -337,14 +358,6 @@ void printState(PeasyCam cam) {
 
 void bindCamera(int view) {
   camera.setState(viewpoints[view], 500);
-}
-
-void drawSailsOld() {
-  pushMatrix();
-  translate(0, 0, -deckHeight+1*pxPerFt);
-  rotateZ(-PI/6);
-  shape(sails);
-  popMatrix();
 }
 
 float rotZ = 2.0f;
