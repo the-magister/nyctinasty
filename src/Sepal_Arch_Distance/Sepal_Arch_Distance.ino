@@ -3,7 +3,7 @@
 // Tools->Processor : "ATmega 328P"
 
 // This uC simply samples the distance sensors as quickly as possible,
-// then trasmits to Sepal_Arch_Freq over serial every distanceSampleRate ms.
+// then trasmits to Sepal_Arch over serial when requested.
 //
 // Code is intentionally "dumb as a brick".  No OTA update is possible to this uC, so
 // we need this codebase to be stable and bullet-proof.
@@ -11,19 +11,15 @@
 #define SHOW_SERIAL_DEBUG false
 
 #include <Streaming.h>
-#include <Metro.h>
 #include <AnalogScanner.h>
 #include <SoftwareSerial.h>
 #include <SoftEasyTransfer.h>
 #include "Nyctinasty_Messages.h"
 
-// make a timer
-Metro sendInterval(distanceSampleRate);
-
-// pin definitions
+// wire it up
 #define BUILTIN_LED 13
 // A0..A7 are also used
-#define RX 3 // not connected, but don't use for something else
+#define RX 3 // connected.
 #define TX 2 // connected. 
 // wire 6.8kOhm resistor between +3.3 and AREF.
 
@@ -46,6 +42,9 @@ void setup() {
 
   // messages
   ETout.begin(details(dist), &mySerial);
+
+  // after set up the input pin
+  pinMode(RX, INPUT); // not pullup; 3.3v sensitive pin attached.
 
   // setup LED pin
   pinMode(BUILTIN_LED, OUTPUT);
@@ -106,7 +105,7 @@ void sendDistance() {
 }
 
 void loop() {
-  if ( sendInterval.check() ) {
+  if ( digitalRead(RX) ) {
     // track updates per send loop, and adjust smoothing,
     // reset count=1 to never allow smoothing=0 that could be used in the ISR whenever
     const uint32_t smoothMult = 4;
@@ -115,6 +114,9 @@ void loop() {
 
     // send readigns
     sendDistance();
+
+    // wait 
+    while( digitalRead(RX) );
   }
 }
 

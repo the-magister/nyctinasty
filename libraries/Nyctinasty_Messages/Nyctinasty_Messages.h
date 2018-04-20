@@ -5,9 +5,9 @@
 
 // system states. probably want to implement a FSM on each uC to work with these.
 /*
-* STARTUP: allows subscriptions to get processed and no publications are allowed to clear comms channels.  after a delay, each Coordinator sends DISTRIB.
-* NORMAL: Coordinator/S are controlling each arch.  
-* CENTRAL: Coordinator is controlling each arch.
+* IDLE: Could want to idle stuff, I guess
+* NORMAL: Arches operate sensors and lighting
+* CENTRAL: Coordinator(s) operate lighting
 * REBOOT: triggers each microcontroller to reboot.  
 * REPROGRAM: triggers each microcontroller to contact the webserver to pull a new binary via OTA programming.
 */
@@ -26,23 +26,19 @@ enum systemState {
 
 // command structure
 typedef struct {
-	systemState state={IDLE}; // critical that this is defaulted to STARTUP
+	systemState state={NORMAL}; 
 } SystemCommand;
 	
 // number of Sepals
 #define N_SEPAL 3
 
-// number of Sides per Sepal
-#define N_SIDE 6 // hexagon
-
 // number of Arches per Sepal
-#define N_ARCH (N_SIDE/2)
+#define N_ARCH 3
 
 // number of distance Sensors per Arch
 #define N_SENSOR 8
 
 // distance data
-const uint32_t distanceSampleRate = 20; // ms
 typedef struct {
 	// min and max range information
 	uint16_t min, max; // ADC limits
@@ -54,6 +50,15 @@ typedef struct {
 
 // FFT analysis of the distance data
 #define N_FREQ_BINS 16 // number of discrete frequency bins to report
+const uint8_t WeightFrequency[] = {
+		0, // almost certainly don't want to use 0th bin
+		1,1,1,1,1,1,1,1, // equal weight to next 8 bins
+		0,0,0,0,0,0,0 // no weight on the high frequency bins
+};
+static_assert(
+	sizeof(WeightFrequency) == N_FREQ_BINS*sizeof(WeightFrequency[0]),
+	"Weight size incorrect."
+);
 typedef struct {
 	// average power; something like the mean of the frequency bins
 	uint16_t avgPower[N_SENSOR]={0};

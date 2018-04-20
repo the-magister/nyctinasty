@@ -31,7 +31,7 @@ void NyctComms::begin(NyctRole role, boolean resetRole) {
 	this->role = role;
 	getsetEEPROM(this->role, resetRole);
 	String s = (this->sepal == N_SEPAL) ? "" : ("-" + String(this->sepal, 10) );
-	String a = (this->side == N_SIDE) ? "" : ("-" + String(this->side, 10) );
+	String a = (this->arch == N_SIDE) ? "" : ("-" + String(this->arch, 10) );
 	myName = "nyc-" + NyctRoleString[this->role] + s + a;
 
 	// comms setup
@@ -94,17 +94,17 @@ void NyctComms::subscribe(SimonSystemState *storage, boolean *trueWithUpdate) {
 		(void *)storage, trueWithUpdate, 0
 	);
 }
-void NyctComms::subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t sideNumber) {
-	String s = String( (sepalNumber == MY_INDEX) ? this->sepal : sepalNumber, 10 );
-	String a = String( (sideNumber == MY_INDEX) ? this->side : sideNumber, 10 );
+void NyctComms::subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t archNumber) {
+	String s = String( sepalNumber, 10 );
+	String a = String( archNumber, 10 );
 	subscribe(
 		distanceString + sep + s + sep + a, 
 		(void *)storage, trueWithUpdate, 0
 	);
 }
-void NyctComms::subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t sideNumber) {
-	String s = String( (sepalNumber == MY_INDEX) ? this->sepal : sepalNumber, 10 );
-	String a = String( (sideNumber == MY_INDEX) ? this->side : sideNumber, 10 );
+void NyctComms::subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t archNumber) {
+	String s = String( sepalNumber, 10 );
+	String a = String( archNumber, 10 );
 	subscribe(
 		frequencyString + sep + s + sep + a, 
 		(void *)storage, trueWithUpdate, 0
@@ -124,17 +124,17 @@ boolean NyctComms::publish(SimonSystemState *storage) {
 		(uint8_t *)storage, (unsigned int)sizeof(SimonSystemState)
 	);
 }
-boolean NyctComms::publish(SepalArchDistance *storage, uint8_t sepalNumber, uint8_t sideNumber) {
-	String s = String( (sepalNumber == MY_INDEX) ? this->sepal : sepalNumber, 10 );
-	String a = String( (sideNumber == MY_INDEX) ? this->side : sideNumber, 10 );
+boolean NyctComms::publish(SepalArchDistance *storage, uint8_t sepalNumber, uint8_t archNumber) {
+	String s = String( sepalNumber, 10 );
+	String a = String( archNumber, 10 );
 	return publish(
 		distanceString + sep + s + sep + a, 
 		(uint8_t *)storage, (unsigned int)sizeof(SepalArchDistance)
 	);
 }
-boolean NyctComms::publish(SepalArchFrequency *storage, uint8_t sepalNumber, uint8_t sideNumber) {
-	String s = String( (sepalNumber == MY_INDEX) ? this->sepal : sepalNumber, 10 );
-	String a = String( (sideNumber == MY_INDEX) ? this->side : sideNumber, 10 );
+boolean NyctComms::publish(SepalArchFrequency *storage, uint8_t sepalNumber, uint8_t archNumber) {
+	String s = String( sepalNumber, 10 );
+	String a = String( archNumber, 10 );
 	return publish(
 		frequencyString + sep + s + sep + a, 
 		(uint8_t *)storage, (unsigned int)sizeof(SepalArchFrequency)
@@ -197,17 +197,17 @@ void NyctComms::reprogram(String binaryName) {
 			break;
 	}
 }
-byte NyctComms::getSepal() { return this->sepal; }
-byte NyctComms::getSide() { return this->side; }
-byte NyctComms::getSideNext() { return (byte)( ((int)this->side+1) % (int)N_SIDE ); }
-byte NyctComms::getSidePrev() { return (byte)( ((int)this->side-1) % (int)N_SIDE ); }
+uint8_t NyctComms::mySepal() { return this->sepal; }
+uint8_t NyctComms::myArch() { return this->arch; }
+uint8_t NyctComms::nextArch() { return (uint8_t)( ((int)this->arch+1) % (int)N_SIDE ); }
+uint8_t NyctComms::prevArch() { return (uint8_t)( ((int)this->arch-1) % (int)N_SIDE ); }
 
 // private methods
 
 typedef struct {
 	NyctRole role; 
-	byte sepal;
-	byte side;
+	uint8_t sepal;
+	uint8_t arch;
 	char wifiPassword[20];
 } EEPROMstruct;
 
@@ -239,10 +239,10 @@ void NyctComms::getsetEEPROM(NyctRole role, boolean resetRole) {
 		m = Serial.readString();
 		save.sepal = (byte)m.toInt();
 		
-		Serial << F("Enter Side [0-5], ") << N_SIDE << F(" for N/A.") << endl;
+		Serial << F("Enter Arch [0-2], ") << N_ARCH << F(" for N/A.") << endl;
 		while(! Serial.available()) yield();
 		m = Serial.readString();
-		save.side = (byte)m.toInt();
+		save.arch = (byte)m.toInt();
 
 		Serial << F("Enter WiFi Password. ") << endl;
 		while(! Serial.available()) yield();
@@ -256,14 +256,14 @@ void NyctComms::getsetEEPROM(NyctRole role, boolean resetRole) {
 
 	this->role = save.role;
 	this->sepal = save.sepal;
-	this->side = save.side;
+	this->arch = save.arch;
 	this->wifiPassword = save.wifiPassword;
 	
 	Serial << F("Role information in EEPROM:");
 	Serial << F(" role=") << this->role;
 	Serial << F(" (") << NyctRoleString[this->role] << F(")");
 	Serial << F(" sepal=") << this->sepal;
-	Serial << F(" side=") << this->side;
+	Serial << F(" arch=") << this->arch;
 	Serial << F(" wifiPassword=") << this->wifiPassword;
 	Serial << endl;
 
@@ -271,11 +271,11 @@ void NyctComms::getsetEEPROM(NyctRole role, boolean resetRole) {
 
 // memory maintained outside of the class.  :(
 
-byte MQTTnTopics = 0;
+uint8_t MQTTnTopics = 0;
 String MQTTsubTopic[MQTT_MAX_SUBSCRIPTIONS];
 void * MQTTsubStorage[MQTT_MAX_SUBSCRIPTIONS];
 boolean * MQTTsubUpdate[MQTT_MAX_SUBSCRIPTIONS];
-byte MQTTsubQoS[MQTT_MAX_SUBSCRIPTIONS];
+uint8_t MQTTsubQoS[MQTT_MAX_SUBSCRIPTIONS];
 
 // the real meat of the work is done here, where we process messages.
 void MQTTCallback(char* topic, byte* payload, unsigned int length) {
@@ -284,7 +284,7 @@ void MQTTCallback(char* topic, byte* payload, unsigned int length) {
 	String t = topic;
 	
 	// run through topics we're subscribed to
-	for( byte i=0;i < MQTTnTopics;i++ ) {
+	for( uint8_t i=0;i < MQTTnTopics;i++ ) {
 		if( t.equals(MQTTsubTopic[i]) ) {
 			// copy memory
 			memcpy( MQTTsubStorage[i], (void*)payload, length );
@@ -411,99 +411,3 @@ void toggleLED() {
 	ledState = !ledState;
 	digitalWrite(BUILTIN_LED, ledState);
 }
-
-
-/*
-
-
-// save
-String myID, otaID;
-
-
-
-	// subscribe to a topic, provide storage for the payload, provide a flag for update indicator. I considered the use of a callback function, but the FSM context suggests that the message handling should reference the FSM state, which would yield branching logic in the handler anyway.
-	template <class T>
-	void commsSubscribe(String topic, T * msg, boolean * updateFlag, uint8_t QoS=0) {
-		commsSubscribe(topic, (void *)msg, updateFlag, QoS);
-	}
-
-	// publish to a topic
-	template <class T>
-	boolean commsPublish(String topic, T * msg) {
-		return commsPublish(topic, (uint8_t *)msg, (unsigned int)sizeof(T));
-	}
-
-
-	// some led accessors
-	// work
-
-
-	void getEEPROM();
-	void putEEPROM();
-
-	void commsSubscribe(String topic, void * msg, boolean * updateFlag, uint8_t QoS);
-	boolean commsPublish(String topic, uint8_t * msg, unsigned int msgBytes);
-
-	// don't need to mess with these
-	void connectWiFi(String ssid="GamesWithFire", String passwd="safetythird", unsigned long interval=5000UL);
-	void connectServices(String broker="192.168.4.1", word port=1883, unsigned long interval=500UL);
-
-
-
-
-// build an MQTT id, which must be unique.
-String commsIdSepalArchFrequency(byte sepalNumber, byte archNumber);
-String commsIdSepalCoordinator(byte sepalNumber);
-String commsIdSepalArchLight(byte sepalNumber, byte archNumber);
-String commsIdFlowerSimonBridge();
-
-
-// build a MQTT topic, for use with subscribe and publish routines.
-#define ALL
-String commsTopicSystemCommand();
-String commsTopicLight(byte sepalNumber, byte archNumber);
-String commsTopicDistance(byte sepalNumber, byte archNumber);
-String commsTopicFrequency(byte sepalNumber, byte archNumber);
-String commsTopicFxSimon();
-
-// internal use?
-String commsStringConstructor(String topicOrId, byte sepalNumber=N_SEPALS, byte archNumber=N_ARCHES);
-
-
-// ID and topics
-String commsIdSepalArchFrequency(byte s, byte a) { return commsStringConstructor("Frequency", s, a); }
-String commsIdSepalCoordinator(byte s) { return commsStringConstructor("Coordinator", s, N_ARCHES); }
-String commsIdSepalArchLight(byte s, byte a) { return commsStringConstructor("FxSimon", s, a); }
-String commsIdFlowerSimonBridge() { return commsStringConstructor("Fx-Simon"); }
-
-// subscription topics
-// note that wildcards are not supported, as we use string matching to determine incoming messages
-String commsTopicSystemCommand() { return stringConstructor("Settings"); }
-String commsTopicLight(byte s, byte a) { return stringConstructor("Light", s, a); }
-String commsTopicDistance(byte s, byte a) { return stringConstructor("Dist", s, a); }
-String commsTopicFrequency(byte s, byte a) { return stringConstructor("Freq", s, a); }
-String commsTopicFxSimon() { return stringConstructor("Fx/Simon"); }
-
-String stringConstructor(String topic, byte sepalNumber, byte archNumber) {
-	const String project = "nyc";
-	const String sep = "/";
-	
-	String sepal = (sepalNumber < N_SEPALS) ? ( sep + String(sepalNumber,10) ) : "";
-	String arch = (archNumber < N_ARCHES && sepalNumber < N_SEPALS) ? ( sep + String(archNumber,10) ) : "";
-
-	String sub = project + sep + topic + sepal + arch;
-//	Serial << sub << endl;
-	return sub;
-}
-
-// reboot
-void reboot() {
-}
-
-// reprogram
-void reprogram(String binaryName) {
-	
-}
-
-
-*/
