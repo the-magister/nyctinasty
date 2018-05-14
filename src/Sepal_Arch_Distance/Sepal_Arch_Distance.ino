@@ -37,6 +37,9 @@ void setup() {
   // for local output
   Serial.begin(115200);
 
+  // up
+  Serial << F("Sepal_Arch_Distance (ADC) Startup.") << endl;
+
   // for remote output
   mySerial.begin(115200);
 
@@ -63,6 +66,8 @@ void setup() {
   dist.min = 0;
   dist.max = 1023;
   dist.noise = 50;
+
+  Serial << F("Startup complete.  Will print=") << SHOW_SERIAL_DEBUG << endl;
 }
 
 // this is an ISR, so needs to be quick.

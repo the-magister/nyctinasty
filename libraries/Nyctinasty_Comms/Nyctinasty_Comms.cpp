@@ -31,7 +31,7 @@ void NyctComms::begin(NyctRole role, boolean resetRole) {
 	this->role = role;
 	getsetEEPROM(this->role, resetRole);
 	String s = (this->sepal == N_SEPAL) ? "" : ("-" + String(this->sepal, 10) );
-	String a = (this->arch == N_SIDE) ? "" : ("-" + String(this->arch, 10) );
+	String a = (this->arch == N_ARCH) ? "" : ("-" + String(this->arch, 10) );
 	myName = "nyc-" + NyctRoleString[this->role] + s + a;
 
 	// comms setup
@@ -199,8 +199,8 @@ void NyctComms::reprogram(String binaryName) {
 }
 uint8_t NyctComms::mySepal() { return this->sepal; }
 uint8_t NyctComms::myArch() { return this->arch; }
-uint8_t NyctComms::nextArch() { return (uint8_t)( ((int)this->arch+1) % (int)N_SIDE ); }
-uint8_t NyctComms::prevArch() { return (uint8_t)( ((int)this->arch-1) % (int)N_SIDE ); }
+uint8_t NyctComms::nextArch() { return (uint8_t)( ((int)this->arch+1) % (int)N_ARCH ); }
+uint8_t NyctComms::prevArch() { return (uint8_t)( ((int)this->arch-1) % (int)N_ARCH ); }
 
 // private methods
 
@@ -331,7 +331,7 @@ boolean NyctComms::publish(String topic, uint8_t * msg, unsigned int msgBytes) {
 
 
 // connect to the WiFi
-void NyctComms::connectWiFi(String ssid, unsigned long interval) {
+void NyctComms::connectWiFi(String ssid, uint32_t interval) {
 	static Metro connectInterval(interval);
 	static byte retryCount = 0;
 	
@@ -341,7 +341,8 @@ void NyctComms::connectWiFi(String ssid, unsigned long interval) {
 		retryCount++;
 		
 		Serial << F("WiFi status=") << WiFi.status();
-		Serial << F("\tAttempting WiFi connection to ") << ssid << F(" password ") << this->wifiPassword << endl;
+		Serial << F(" Retry #") << retryCount;
+		Serial << F(" Attempting WiFi connection to ") << ssid << F(" password ") << this->wifiPassword << endl;
 		// Attempt to connect
 		WiFi.begin(ssid.c_str(), this->wifiPassword.c_str());
 		
@@ -352,7 +353,7 @@ void NyctComms::connectWiFi(String ssid, unsigned long interval) {
 }
 
 // connect to MQTT broker and other services
-void NyctComms::connectServices(String broker, word port, unsigned long interval) {
+void NyctComms::connectServices(String broker, word port, uint32_t interval) {
 	static Metro connectInterval(interval);
 	static byte retryCount = 0;
 

@@ -62,7 +62,8 @@ void reboot() {
 void reprogram() {
   comms.reprogram("Sepal_Arch.ino.bin");
 }; State Reprogram = State(reprogram);
-FSM stateMachine = FSM(Idle); // initialize state machine
+//FSM stateMachine = FSM(Idle); // initialize state machine
+FSM stateMachine = FSM(Normal); // initialize state machine
 
 // my role
 NyctRole role = Arch;
@@ -136,7 +137,7 @@ void loop() {
   comms.update();
 
   // bail out if not connected
-  if ( ! comms.isConnected() ) return;
+//  if ( ! comms.isConnected() ) return;
 
   // check for settings update
   if ( sC.hasUpdate ) {
@@ -178,7 +179,7 @@ void normal() {
   // check for an update to concordance
   if ( sAF[0].hasUpdate && sAF[1].hasUpdate && sAF[2].hasUpdate ) {
     // are we concordant?
-    getConcordance();
+//    getConcordance();
     // show it
     updateLightsByConcordance();
     // reset
@@ -191,6 +192,7 @@ void normal() {
     distanceUpdate.reset();
 
     // ask for data
+    Serial << F("Pull data") << endl;
     digitalWrite(TX, HIGH);
   }
 
@@ -199,11 +201,15 @@ void normal() {
     // stop asking for data
     digitalWrite(TX, LOW);
 
+    Serial << F("Got data") << endl;
+    delay(1000);
+
     // fill buffer
     fillBuffer();
 
     // update bar lights
     updateLightsByDistance();
+
   }
 
   // do FFT in segements.
@@ -277,12 +283,12 @@ void updateLightsByDistance() {
   leftBack[2] = leftFront[2] = bar[1];
   leftBack[1] = leftFront[1] = bar[2];
   leftBack[0] = leftFront[0] = bar[3];
-  
+
   rightBack[0] = rightFront[0] = bar[4];
   rightBack[1] = rightFront[1] = bar[5];
   rightBack[2] = rightFront[2] = bar[6];
   rightBack[3] = rightFront[3] = bar[7];
-  
+
 }
 
 // adjust lights on the down/legs with frequency readings
@@ -313,7 +319,7 @@ void updateLightsByFrequency() {
     leftDown[j] = CHSV(archHue[0], archSat[0], brighten8_video(constrain(value, 0, 255)));
   }
   Serial << endl;
-  
+
   rightDown = leftDown;
 }
 
@@ -461,6 +467,7 @@ void PrintVector(double *vData, uint16_t bufferSize, uint8_t scaleType) {
   Serial.println();
 }
 
+/*
 void getConcordance() {
 
   // this is all wrong.  need 2d correlation analysis
@@ -492,15 +499,12 @@ void getConcordance() {
 
   // weighted mean vector
   float xBar[N_ARCH] = {0.0};
-  for ( byte a = 0; a < N_ARCH; a++ ) {
-    for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-      xBar[a] += vecWeight[b] * (float)sAF[a].freq.power[b];
+  for ( byte j = 0; j < N_ARCH; j++ ) {
+    for ( byte i = 0; i < N_FREQ_BINS; i++ ) {
+      // this doesn't look quite right:
+      xBar[j] += vecWeight[j] * (float)sAF[comms.myArch()].freq.power[i][j];
     }
   }
-    for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
-    for ( byte i = 0; i < N_SENSOR; i++ ) {
-      sumSensors[j] += sAF[comms.myArch()].freq.power[i][j];
-
 
   // weighted covariance matrix
   float Cov[N_ARCH][N_ARCH] = {0.0};
@@ -509,9 +513,9 @@ void getConcordance() {
       float sum = 0.0;
       for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
         sum += vecWeight[b] *
-          ((float)sAF[a1].freq[b] - xBar[a1]) * 
-          ((float)sAF[a2].freq[b] - xBar[a2]);
-      }  
+               ((float)sAF[a1].freq[b] - xBar[a1]) *
+               ((float)sAF[a2].freq[b] - xBar[a2]);
+      }
       Cov[a1][a2] = covTerm * sum;
     }
   }
@@ -520,30 +524,30 @@ void getConcordance() {
   float Cor[N_ARCH][N_ARCH] = {0.0};
   float Is[N_ARCH];
   for ( byte a = 0; a < N_ARCH; a++ ) {
-    Is[a] = 1.0/pow(Cov[a][a], 0.5);
-  }  
+    Is[a] = 1.0 / pow(Cov[a][a], 0.5);
+  }
   for ( byte a1 = 0; a1 < N_ARCH; a1++ ) {
     for ( byte a2 = a1; a2 < N_ARCH; a2++ ) { // symmetry
-      if( a1!=a2 ) Cor[a1,a2] = Is[a1] * Cov[a1][a2] * Is[a2];       
+      if ( a1 != a2 ) Cor[a1, a2] = Is[a1] * Cov[a1][a2] * Is[a2];
     }
   }
 
   // save
-  switch( coms.myArch() ) {
+  switch ( coms.myArch() ) {
     case 0: // A. B is next. C is prev.
-      concordNext = Cor[0,1];  // corr.AB = mat.cor[1,2]
-      concordPrev = Cor[0,2];  // corr.CA = mat.cor[1,3]
+      concordNext = Cor[0, 1]; // corr.AB = mat.cor[1,2]
+      concordPrev = Cor[0, 2]; // corr.CA = mat.cor[1,3]
       break;
     case 1: // B. C is next. A is prev.
-      concordNext = Cor[1,2];  // corr.BC = mat.cor[2,3]
-      concordPrev = Cor[0,1];  // corr.AB = mat.cor[1,2]
+      concordNext = Cor[1, 2]; // corr.BC = mat.cor[2,3]
+      concordPrev = Cor[0, 1]; // corr.AB = mat.cor[1,2]
       break;
     case 2: // C. A is next. B is prev.
-      concordNext = Cor[0,2];  // corr.CA = mat.cor[1,3]
-      concordPrev = Cor[1,2];  // corr.BC = mat.cor[2,3]
+      concordNext = Cor[0, 2]; // corr.CA = mat.cor[1,3]
+      concordPrev = Cor[1, 2]; // corr.BC = mat.cor[2,3]
       break;
-  }  
-  concordTotal = (Cor[0,1]+Cor[1,2]+Cor[0,2])/3.0;
-  
-}
+  }
+  concordTotal = (Cor[0, 1] + Cor[1, 2] + Cor[0, 2]) / 3.0;
 
+}
+*/
