@@ -48,6 +48,7 @@ double vImag[samples];
 #define SCL_INDEX 0x00
 #define SCL_TIME 0x01
 #define SCL_FREQUENCY 0x02
+#define SCL_PLOT 0x03
 
 void setup()
 {
@@ -104,9 +105,10 @@ void PrintVector(double *vData, uint16_t bufferSize, uint8_t scaleType)
 	break;
     }
     Serial.print(abscissa, 6);
+    if(scaleType==SCL_FREQUENCY)
+      Serial.print("Hz");
     Serial.print(" ");
-    Serial.print(vData[i], 4);
-    Serial.println();
+    Serial.println(vData[i], 4);
   }
   Serial.println();
 }

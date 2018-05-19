@@ -1,6 +1,6 @@
 // IDE Settings:
 // Tools->Board : "Arduino Nano"
-// Tools->Processor : "ATmega 328P"
+// Tools->Processor : "ATmega 328P (Old Bootloader)"
 
 // This uC simply samples the distance sensors as quickly as possible,
 // then trasmits to Sepal_Arch over serial when requested.
@@ -8,7 +8,7 @@
 // Code is intentionally "dumb as a brick".  No OTA update is possible to this uC, so
 // we need this codebase to be stable and bullet-proof.
 
-#define SHOW_SERIAL_DEBUG false
+#define SHOW_SERIAL_DEBUG true
 
 #include <Streaming.h>
 #include <AnalogScanner.h>
@@ -42,7 +42,7 @@ void setup() {
 
   // for remote output
   mySerial.begin(115200);
-
+  
   // messages
   ETout.begin(details(dist), &mySerial);
 
@@ -88,6 +88,9 @@ void ISR_getValue(int index, int pin, int value) {
 // send sensor dist
 void sendDistance() {
 
+  // ship it.
+  ETout.sendData();
+
   if( SHOW_SERIAL_DEBUG ) {
     const char sep[] = ",";
 
@@ -100,17 +103,21 @@ void sendDistance() {
     Serial << endl;
   }
 
-  // ship it.
-  ETout.sendData();
-
-  // toggle the LED
+  // toggle the LED every N times
+  static uint32_t counter = 0;
   static boolean LEDstate = false;
-  LEDstate = !LEDstate;
-  digitalWrite(BUILTIN_LED, LEDstate);
+  if( counter++ >= 10 ) {
+    LEDstate = !LEDstate;
+    digitalWrite(BUILTIN_LED, LEDstate);
+    counter = 0;
+  }
 }
 
 void loop() {
-  if ( digitalRead(RX) ) {
+  // toggled RX pin
+  static boolean pinState = false;
+  boolean newState = digitalRead(RX);
+  if( newState != pinState ) {
     // track updates per send loop, and adjust smoothing,
     // reset count=1 to never allow smoothing=0 that could be used in the ISR whenever
     const uint32_t smoothMult = 4;
@@ -120,8 +127,8 @@ void loop() {
     // send readigns
     sendDistance();
 
-    // wait 
-    while( digitalRead(RX) );
+    // store state
+    pinState = digitalRead(RX);
   }
 }
 

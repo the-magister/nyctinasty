@@ -48,6 +48,7 @@ unsigned long time;
 #define SCL_INDEX 0x00
 #define SCL_TIME 0x01
 #define SCL_FREQUENCY 0x02
+#define SCL_PLOT 0x03
 
 void setup()
 {
@@ -82,7 +83,7 @@ void loop()
     PrintVector(vImag, samples, SCL_INDEX);*/
     FFT.ComplexToMagnitude(vReal, vImag, samples); /* Compute magnitudes */
     /*Serial.println("Computed magnitudes:");
-    PrintVector(vReal, (samples >> 1), SCL_FREQUENCY);	*/
+    PrintVector(vReal, (samples >> 1), SCL_FREQUENCY);*/
     double x = FFT.MajorPeak(vReal, samples, sampling);
     Serial.print(frequency);
     Serial.print(": \t\t");
@@ -105,18 +106,19 @@ void PrintVector(double *vData, uint16_t bufferSize, uint8_t scaleType)
     {
       case SCL_INDEX:
         abscissa = (i * 1.0);
-        break;
+	break;
       case SCL_TIME:
         abscissa = ((i * 1.0) / sampling);
-        break;
+	break;
       case SCL_FREQUENCY:
         abscissa = ((i * 1.0 * sampling) / samples);
-        break;
+	break;
     }
     Serial.print(abscissa, 6);
+    if(scaleType==SCL_FREQUENCY)
+      Serial.print("Hz");
     Serial.print(" ");
-    Serial.print(vData[i], 4);
-    Serial.println();
+    Serial.println(vData[i], 4);
   }
   Serial.println();
 }

@@ -250,10 +250,11 @@ void NyctComms::getsetEEPROM(NyctRole role, boolean resetRole) {
 		m.toCharArray(save.wifiPassword, sizeof(save.wifiPassword));
 	
 		EEPROM.put(0, save);
+		EEPROM.commit();
 	} 
 
 	EEPROM.end();
-
+	
 	this->role = save.role;
 	this->sepal = save.sepal;
 	this->arch = save.arch;

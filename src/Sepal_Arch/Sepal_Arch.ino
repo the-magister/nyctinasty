@@ -15,13 +15,25 @@
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
 
+// spammy?
+#define SHOW_SERIAL_DEBUG true
+
 // wire it up
-// D5..D8 used for LEDS
-#define RX D1
-#define TX D2
+// RX/TX for softserial comms
+#define RX D1 // GPIO5
+#define TX D2 // GPIO4
 // voltage divider: 5V->3.3V
 // TX to RX_ESP via 820 Ohm resistor
 // RX_ESP to GND via 1500 Ohm resistor
+
+// LEDs are connected:
+// D5, GPIO14
+// D6, GPIO12
+// D7, GPIO13
+// D8, GPIO15
+
+// also used
+// D4, GPIO2, BUILTIN_LED
 
 // LED handling
 
@@ -33,17 +45,17 @@
 #define LEDS_BAR 4
 #define LEDS_VERT 20
 #define LEDS_PER_PIN LEDS_BAR+LEDS_VERT
-CRGB leds[NUM_PINS * LEDS_PER_PIN];
-// array totals
-CRGBSet leftBack(&leds[0 * LEDS_PER_PIN], LEDS_PER_PIN); // D5
-CRGBSet rightBack(&leds[1 * LEDS_PER_PIN], LEDS_PER_PIN); // D6
-CRGBSet leftFront(&leds[2 * LEDS_PER_PIN], LEDS_PER_PIN); // D7
-CRGBSet rightFront(&leds[3 * LEDS_PER_PIN], LEDS_PER_PIN); // D8
+
+CRGBArray<LEDS_PER_PIN> leftBack;
+CRGBArray<LEDS_PER_PIN> rightBack;
+CRGBArray<LEDS_PER_PIN> leftFront;
+CRGBArray<LEDS_PER_PIN> rightFront;
+
 // verticals
-CRGBSet leftUp = leftBack(LEDS_BAR, LEDS_PER_PIN);
-CRGBSet rightUp = rightBack(LEDS_BAR, LEDS_PER_PIN);
-CRGBSet leftDown = leftDown(LEDS_BAR, LEDS_PER_PIN);
-CRGBSet rightDown = rightDown(LEDS_BAR, LEDS_PER_PIN);
+CRGBSet leftUp = leftFront(LEDS_BAR, LEDS_PER_PIN-1);
+CRGBSet rightUp = rightFront(LEDS_BAR, LEDS_PER_PIN-1);
+CRGBSet leftDown = leftBack(LEDS_BAR, LEDS_PER_PIN-1);
+CRGBSet rightDown = rightBack(LEDS_BAR, LEDS_PER_PIN-1);
 
 // color choices, based on arch and sepal information
 byte archHue[N_ARCH] = {HUE_RED, HUE_GREEN, HUE_BLUE};
@@ -62,8 +74,8 @@ void reboot() {
 void reprogram() {
   comms.reprogram("Sepal_Arch.ino.bin");
 }; State Reprogram = State(reprogram);
-//FSM stateMachine = FSM(Idle); // initialize state machine
-FSM stateMachine = FSM(Normal); // initialize state machine
+FSM stateMachine = FSM(Idle); // initialize state machine
+//FSM stateMachine = FSM(Normal); // initialize state machine
 
 // my role
 NyctRole role = Arch;
@@ -86,7 +98,7 @@ typedef struct {
 sAF_t sAF[N_ARCH];
 
 // FFT object
-const uint32_t distanceSampleRate = 20; // ms
+const uint32_t distanceSampleRate = 10; // ms
 #define N_FREQ_SAMPLES (uint16_t)(1<<7)  // This value MUST ALWAYS be a power of 2
 uint16_t buffer[N_SENSOR][N_FREQ_SAMPLES];
 boolean bufferReady = false;
@@ -106,35 +118,42 @@ void setup() {
   Serial << endl << endl << endl << F("Startup begins.") << endl;
 
   // for remote output
+  Serial << F("Configure softwareserial...");
   mySerial.begin(115200);
-
   // messages
   ETin.begin(details(dist), &mySerial);
-
   // after set up the input pin
   pinMode(TX, OUTPUT); // trigger to send
-
-  // start comms
-  comms.begin(role);
-
-  // subscribe
-  comms.subscribe(&sC.settings, &sC.hasUpdate);
-  for ( byte i = 0; i < N_ARCH; i++ ) {
-    // no need to subscribe to our own message
-    if ( i != comms.myArch() ) comms.subscribe(&sAF[i].freq, &sAF[i].hasUpdate, comms.mySepal(), i);
-  }
+  Serial << F(" done.") << endl;
 
   // LEDs
-  FastLED.addLeds<WS2811_PORTA, NUM_PINS, COLOR_ORDER>(leds, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
+  Serial << F("Configure leds...");
+  FastLED.addLeds<WS2811, D5, COLOR_ORDER>(leftBack, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
+  FastLED.addLeds<WS2811, D6, COLOR_ORDER>(rightBack, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
+  FastLED.addLeds<WS2811, D7, COLOR_ORDER>(leftFront, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
+  FastLED.addLeds<WS2811, D8, COLOR_ORDER>(rightFront, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
   FastLED.setBrightness(255);
   runStartupPattern();
+  Serial << F(" done.") << endl;
+
+  // start comms
+//  comms.begin(role, true);
+
+  // subscribe
+//  comms.subscribe(&sC.settings, &sC.hasUpdate);
+//  for ( byte i = 0; i < N_ARCH; i++ ) {
+//    // no need to subscribe to our own message
+//    if ( i != comms.myArch() ) comms.subscribe(&sAF[i].freq, &sAF[i].hasUpdate, comms.mySepal(), i);
+//  }
 
   Serial << F("Startup complete.") << endl;
+  
+  switchState(NORMAL);
 }
 
 void loop() {
   // comms handling
-  comms.update();
+//  comms.update();
 
   // bail out if not connected
 //  if ( ! comms.isConnected() ) return;
@@ -165,13 +184,26 @@ void switchState(systemState state) {
 void idle() {
   static byte hue = 0;
 
-  EVERY_N_MILLISECONDS(20) {
+  EVERY_N_MILLISECONDS(10) {
     // show a throbbing rainbow background
     hue++;
     leftBack.fill_rainbow(hue, 255 / leftBack.size()); // paint
     rightBack = leftBack;
     leftFront.fill_rainbow(hue + 128, -255 / leftFront.size());
     rightFront = leftFront;
+    FastLED.show();
+  }
+}
+
+void askForDistance() {
+  // toggled TX pin
+  static boolean pinState = false;
+  static Metro distanceUpdate(distanceSampleRate);
+
+  if ( distanceUpdate.check() ) {
+    distanceUpdate.reset();
+    pinState = !pinState;
+    digitalWrite(TX, pinState);
   }
 }
 
@@ -187,29 +219,21 @@ void normal() {
   }
 
   // check to see if we need to pull new distance data.
-  static Metro distanceUpdate(distanceSampleRate);
-  if ( distanceUpdate.check() ) {
-    distanceUpdate.reset();
-
-    // ask for data
-    Serial << F("Pull data") << endl;
-    digitalWrite(TX, HIGH);
-  }
+  askForDistance();
 
   // get data from ADCs
+  static uint32_t counter = 0;
   if ( ETin.receiveData() ) {
-    // stop asking for data
-    digitalWrite(TX, LOW);
+    // we need to update the LEDs now while we won't screw up SoftwareSerial and WiFi
+    pushToHardware();
 
-    Serial << F("Got data") << endl;
-    delay(1000);
+    counter ++;
 
     // fill buffer
     fillBuffer();
 
     // update bar lights
     updateLightsByDistance();
-
   }
 
   // do FFT in segements.
@@ -233,13 +257,24 @@ void normal() {
   if ( publishReady ) {
     publishReady = false;
     // publish
-    comms.publish(&sAF[comms.myArch()].freq, comms.mySepal(), comms.myArch());
+//    comms.publish(&sAF[comms.myArch()].freq, comms.mySepal(), comms.myArch());
     // flag that our frequency data are ready
     sAF[comms.myArch()].hasUpdate = true;
     // update lights
     updateLightsByFrequency();
   }
 
+  const uint32_t reportInterval = 10;
+  EVERY_N_SECONDS( reportInterval ) {
+    uint32_t actualDistanceSampleRate = (reportInterval*1000UL)/counter;
+
+    Serial << F("Distance sample interval, actual=") << actualDistanceSampleRate;
+    Serial << F(" hypothetical=") << distanceSampleRate;
+    Serial << F(" ms.") << endl;
+    
+    counter=0;
+  }
+  
 }
 void central() {
   // NOP, currently.  Will look for lighting directions, either through UDP (direct) or MQTT (procedural).
@@ -250,9 +285,9 @@ void runStartupPattern() {
   leftBack.fill_solid(CRGB::Purple);
   rightBack.fill_solid(CRGB::Aqua);
   leftFront.fill_solid(CRGB::Red);
-  rightFront.fill_solid(CRGB::Red);
+  rightFront.fill_solid(CRGB::Blue);
   FastLED.show();
-  delay(333);
+  delay(1000);
 
   leftBack.fill_solid(CRGB::Black);
   rightBack.fill_solid(CRGB::Black);
@@ -275,7 +310,8 @@ void updateLightsByDistance() {
                            dist.min, dist.max,
                            (uint16_t)0, (uint16_t)255
                          );
-    bar[i] = CHSV(archHue[comms.myArch()], archSat[comms.myArch()], (byte)intensity);
+//    bar[i] = CHSV(archHue[comms.myArch()], archSat[comms.myArch()], (byte)intensity);
+    bar[i] = CHSV(archHue[0], archSat[0], (byte)intensity);
   }
 
   // assign to hardware. ugly and direct, but we can see what's going on.
@@ -333,9 +369,9 @@ void pushToHardware() {
   FastLED.show();
 
   // show our frame rate, periodically
-  EVERY_N_SECONDS( 5 ) {
+  EVERY_N_SECONDS( 20 ) {
     uint16_t reportedFPS = FastLED.getFPS();
-    Serial << F("FPS reported (Hz): ") << reportedFPS << endl;
+    Serial << F("FastLED reported FPS, Hz=") << reportedFPS << endl;
   }
 }
 
@@ -429,10 +465,10 @@ void computeFFT(byte index) {
   sAF[comms.myArch()].freq.avgPower[index] = (uint16_t)real[0];
   for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) sAF[comms.myArch()].freq.power[index][j] = (uint16_t)real[j + 1];
 
-  unsigned long toc = millis();
+  unsigned long dur = (millis() - tic);
   if ( index == 0 ) {
-    Serial << F("FFT complete.  duration=") << toc - tic;
-    Serial << F(" ms.  receiving samples every=") << distanceSampleRate;
+    Serial << F("Last FFT complete.");
+    Serial << F(" duration=") << dur;
     Serial << F(" ms.") << endl;
   }
 }
