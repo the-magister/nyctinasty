@@ -4,34 +4,25 @@
 #include <Arduino.h>
 
 // system states. probably want to implement a FSM on each uC to work with these.
-/*
-* IDLE: Could want to idle stuff, I guess
-* NORMAL: Arches operate sensors and lighting
-* CENTRAL: Coordinator(s) operate lighting
-* REBOOT: triggers each microcontroller to reboot.  
-* REPROGRAM: triggers each microcontroller to contact the webserver to pull a new binary via OTA programming.
-*/
 enum systemState {
-// note: starting at '48' implies that a plain text "0" will be interpreted as the zeroith element.
-//state				default	subscriptions	publications	
-  IDLE=48,		//	yes		ANY				NONE
-  NORMAL,		//	no		ANY				ANY
-  CENTRAL,		//	no		ANY				Coordinator
-  
-  REBOOT,		//  no		N/A				N/A
-  REPROGRAM,	//  no		N/A				N/A
+//	state		//	description
+	STARTUP=0,	//	all roles start here
+	
+	OFFLINE,	//	normal operation, but no messaging
+	ONLINE,		//	normal operation, but no messaging
+	SLAVED,		//	all activity dictated
 
-  N_STATES	// as a counter/max
+	REBOOT,		//  trigger to reboot  
+	REPROGRAM,	//  trigger to contact the webserver to pull a new binary 
+
+	N_STATES	//	as a counter/max
 };
 
 // command structure
 typedef struct {
-	systemState state={NORMAL}; 
+	systemState state={STARTUP}; 
 } SystemCommand;
 	
-// number of Sepals
-#define N_SEPAL 3
-
 // number of Arches per Sepal
 #define N_ARCH 3
 

@@ -8,19 +8,19 @@ void setOnLED();
 void setOffLED();
 void toggleLED();
 
-// helpful decodes for the humans.
+// helpful decodes for the humans.  must be unique.
 const String NyctRoleString[] = {
-	"Distance",
-	"Frequency",
-	"Light",
+	"Coordinator",
+	"Arch-0",
+	"Arch-1",
+	"Arch-2",
 	"Sound",
-	"Fx-Simon",
-	"Coordinator"
+	"Cannon"
 };
 
 // public methods
 
-void NyctComms::begin(NyctRole role, boolean resetRole) {
+void NyctComms::begin(NyctRole role) {
 	Serial << F("Startup. commsBegin starts.") << endl;
 
 	// prep the LED
@@ -28,12 +28,10 @@ void NyctComms::begin(NyctRole role, boolean resetRole) {
 	digitalWrite(BUILTIN_LED, !BUILTIN_LED_ON_STATE);
 
 	// figure out who I am.
-	this->role = role;
-	getsetEEPROM(this->role, resetRole);
-	String s = (this->sepal == N_SEPAL) ? "" : ("-" + String(this->sepal, 10) );
-	String a = (this->arch == N_ARCH) ? "" : ("-" + String(this->arch, 10) );
-	myName = "nyc-" + NyctRoleString[this->role] + s + a;
-
+	getsetEEPROM(role);
+	myName = "nyc-" + NyctRoleString[this->role];
+	Serial << F("Who's your daddy? ") << myName << endl;
+	
 	// comms setup
 	if( WiFi.status()==WL_CONNECTED ) WiFi.disconnect();
 	
@@ -73,7 +71,6 @@ void NyctComms::begin(NyctRole role, boolean resetRole) {
 		else if (error == OTA_END_ERROR) Serial.println("End Failed");
 	});
 	
-	
 	Serial << F("Startup. commsBegin ends.") << endl;
 }
 // subscriptions. cover the messages in Nyctinasty_Messages.h
@@ -94,19 +91,17 @@ void NyctComms::subscribe(SimonSystemState *storage, boolean *trueWithUpdate) {
 		(void *)storage, trueWithUpdate, 0
 	);
 }
-void NyctComms::subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t archNumber) {
-	String s = String( sepalNumber, 10 );
+void NyctComms::subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t archNumber) {
 	String a = String( archNumber, 10 );
 	subscribe(
-		distanceString + sep + s + sep + a, 
+		distanceString + sep + a, 
 		(void *)storage, trueWithUpdate, 0
 	);
 }
-void NyctComms::subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t archNumber) {
-	String s = String( sepalNumber, 10 );
+void NyctComms::subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t archNumber) {
 	String a = String( archNumber, 10 );
 	subscribe(
-		frequencyString + sep + s + sep + a, 
+		frequencyString + sep + a, 
 		(void *)storage, trueWithUpdate, 0
 	);
 }
@@ -124,19 +119,17 @@ boolean NyctComms::publish(SimonSystemState *storage) {
 		(uint8_t *)storage, (unsigned int)sizeof(SimonSystemState)
 	);
 }
-boolean NyctComms::publish(SepalArchDistance *storage, uint8_t sepalNumber, uint8_t archNumber) {
-	String s = String( sepalNumber, 10 );
+boolean NyctComms::publish(SepalArchDistance *storage, uint8_t archNumber) {
 	String a = String( archNumber, 10 );
 	return publish(
-		distanceString + sep + s + sep + a, 
+		distanceString + sep + a, 
 		(uint8_t *)storage, (unsigned int)sizeof(SepalArchDistance)
 	);
 }
-boolean NyctComms::publish(SepalArchFrequency *storage, uint8_t sepalNumber, uint8_t archNumber) {
-	String s = String( sepalNumber, 10 );
+boolean NyctComms::publish(SepalArchFrequency *storage, uint8_t archNumber) {
 	String a = String( archNumber, 10 );
 	return publish(
-		frequencyString + sep + s + sep + a, 
+		frequencyString + sep + a, 
 		(uint8_t *)storage, (unsigned int)sizeof(SepalArchFrequency)
 	);
 }
@@ -197,78 +190,45 @@ void NyctComms::reprogram(String binaryName) {
 			break;
 	}
 }
-uint8_t NyctComms::mySepal() { return this->sepal; }
-uint8_t NyctComms::myArch() { return this->arch; }
-uint8_t NyctComms::nextArch() { return (uint8_t)( ((int)this->arch+1) % (int)N_ARCH ); }
-uint8_t NyctComms::prevArch() { return (uint8_t)( ((int)this->arch-1) % (int)N_ARCH ); }
+NyctRole NyctComms::getRole() { return(this->role); }
 
 // private methods
 
 typedef struct {
 	NyctRole role; 
-	uint8_t sepal;
-	uint8_t arch;
-	char wifiPassword[20];
 } EEPROMstruct;
 
-void NyctComms::getsetEEPROM(NyctRole role, boolean resetRole) {
+void NyctComms::getsetEEPROM(NyctRole role) {
 	EEPROMstruct save;
 	EEPROM.begin(512);
-	EEPROM.get(0, save);
 	
-	if( resetRole || save.role != role) {
-		// Yikes.  Fresh uC with no information on its role in life.  
-		setOnLED();
-
-		// bootstrap
-		Serial << F("*** No role information in EEPROM ***") << endl;
+	if( role != N_ROLES ) {
+		// set
+		save.role = role;
 		
-		Serial.setTimeout(10);
-		
-		Serial << F("Enter Role. ") << endl;
-		NyctRole n = N_ROLES;
-		for( byte i=0; i<n; i++ ) {
-			Serial << F("  ") << i << "=" << NyctRoleString[i] << endl;
-		}
-		while(! Serial.available()) yield();
-		String m = Serial.readString();
-		save.role = (NyctRole)m.toInt();
-		
-		Serial << F("Enter Sepal [0-2], ") << N_SEPAL << F(" for N/A.") << endl;
-		while(! Serial.available()) yield();
-		m = Serial.readString();
-		save.sepal = (byte)m.toInt();
-		
-		Serial << F("Enter Arch [0-2], ") << N_ARCH << F(" for N/A.") << endl;
-		while(! Serial.available()) yield();
-		m = Serial.readString();
-		save.arch = (byte)m.toInt();
-
-		Serial << F("Enter WiFi Password. ") << endl;
-		while(! Serial.available()) yield();
-		m = Serial.readString();
-		m.toCharArray(save.wifiPassword, sizeof(save.wifiPassword));
-	
 		EEPROM.put(0, save);
 		EEPROM.commit();
-	} 
+	} else {
+		// get
+		EEPROM.get(0, save);
+		
+		if( save.role >= N_ROLES ) {
+			Serial << F("*** No role information in EEPROM. HALTING. ***") << endl;
+			while(1) delay(5);
+		}
+	}
 
 	EEPROM.end();
 	
 	this->role = save.role;
-	this->sepal = save.sepal;
-	this->arch = save.arch;
-	this->wifiPassword = save.wifiPassword;
 	
 	Serial << F("Role information in EEPROM:");
 	Serial << F(" role=") << this->role;
 	Serial << F(" (") << NyctRoleString[this->role] << F(")");
-	Serial << F(" sepal=") << this->sepal;
-	Serial << F(" arch=") << this->arch;
-	Serial << F(" wifiPassword=") << this->wifiPassword;
 	Serial << endl;
 
 }
+
 
 // memory maintained outside of the class.  :(
 
@@ -329,39 +289,41 @@ boolean NyctComms::publish(String topic, uint8_t * msg, unsigned int msgBytes) {
 	return mqtt.publish(topic.c_str(), msg, msgBytes);
 }
 
-
-
 // connect to the WiFi
-void NyctComms::connectWiFi(String ssid, uint32_t interval) {
+void NyctComms::connectWiFi(String ssid, String pwd, uint32_t interval) {
 	static Metro connectInterval(interval);
-	static byte retryCount = 0;
+	static uint32_t retryCount = 0;
 	
 	if (WiFi.status()==WL_CONNECTED) retryCount = 0;
 	
 	if ( connectInterval.check() ) {
 		retryCount++;
-		
+		toggleLED();
+
+/*		
 		Serial << F("WiFi status=") << WiFi.status();
 		Serial << F(" Retry #") << retryCount;
-		Serial << F(" Attempting WiFi connection to ") << ssid << F(" password ") << this->wifiPassword << endl;
+		Serial << F(" Attempting WiFi connection to ") << ssid << F(" password ") << pwd<< endl;
+*/
 		// Attempt to connect
-		WiFi.begin(ssid.c_str(), this->wifiPassword.c_str());
+		WiFi.begin(ssid.c_str(), pwd.c_str());
 		
 		connectInterval.reset();
 	}
 	
-	if( retryCount >= 10 ) reboot();
+//	if( retryCount >= 10 ) reboot();
 }
 
 // connect to MQTT broker and other services
 void NyctComms::connectServices(String broker, word port, uint32_t interval) {
 	static Metro connectInterval(interval);
-	static byte retryCount = 0;
+	static uint32_t retryCount = 0;
 
 	if ( connectInterval.check() ) {
 
 		retryCount++;
-
+		toggleLED();
+		
 		if ( MDNS.begin ( myName.c_str() ) ) {
 			Serial << F("mDNS responder started: ") << myName << endl;
 		} else {
@@ -397,7 +359,7 @@ void NyctComms::connectServices(String broker, word port, uint32_t interval) {
 		connectInterval.reset();
 	}
 
-	if( retryCount >= 10 ) reboot();
+//	if( retryCount >= 10 ) reboot();
 }
 
 

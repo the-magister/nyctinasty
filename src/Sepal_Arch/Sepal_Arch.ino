@@ -18,6 +18,11 @@
 // spammy?
 #define SHOW_SERIAL_DEBUG true
 
+// my role and arch number
+NyctRole myRole = N_ROLES; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
+// Arch0, Arch1, Arch2 for bootstrapping a new controller.
+byte myArch;
+
 // wire it up
 // RX/TX for softserial comms
 #define RX D1 // GPIO5
@@ -65,20 +70,13 @@ byte archSat[N_ARCH] = {128, 128, 128};
 NyctComms comms;
 
 // define a state for every systemState
-void idle(); State Idle = State(idle);
-void normal(); State Normal = State(normal);
-void central(); State Central = State(central);
-void reboot() {
-  comms.reboot();
-}; State Reboot = State(reboot);
-void reprogram() {
-  comms.reprogram("Sepal_Arch.ino.bin");
-}; State Reprogram = State(reprogram);
-FSM stateMachine = FSM(Idle); // initialize state machine
-//FSM stateMachine = FSM(Normal); // initialize state machine
-
-// my role
-NyctRole role = Arch;
+void startup(); State Startup = State(startup);
+void offline(); State Offline = State(offline);
+void online(); State Online = State(online);
+void slaved(); State Slaved = State(slaved);
+void reboot() { comms.reboot(); }; State Reboot = State(reboot);
+void reprogram() { comms.reprogram("Sepal_Arch.ino.bin"); }; State Reprogram = State(reprogram);
+FSM stateMachine = FSM(Startup); // initialize state machine
 
 // incoming message storage and flag for update
 struct sC_t {
@@ -133,30 +131,26 @@ void setup() {
   FastLED.addLeds<WS2811, D7, COLOR_ORDER>(leftFront, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
   FastLED.addLeds<WS2811, D8, COLOR_ORDER>(rightFront, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
   FastLED.setBrightness(255);
-  runStartupPattern();
   Serial << F(" done.") << endl;
 
-  // start comms
-//  comms.begin(role, true);
+  // configure comms
+  comms.begin(myRole);
+  myRole = comms.getRole();
+  myArch = myRole - 1;
 
   // subscribe
-//  comms.subscribe(&sC.settings, &sC.hasUpdate);
-//  for ( byte i = 0; i < N_ARCH; i++ ) {
-//    // no need to subscribe to our own message
-//    if ( i != comms.myArch() ) comms.subscribe(&sAF[i].freq, &sAF[i].hasUpdate, comms.mySepal(), i);
-//  }
+  comms.subscribe(&sC.settings, &sC.hasUpdate);
+  for ( byte i = 0; i < N_ARCH; i++ ) {
+    // no need to subscribe to our own message
+    if ( i != myArch ) comms.subscribe(&sAF[i].freq, &sAF[i].hasUpdate, i);
+  }
 
   Serial << F("Startup complete.") << endl;
-  
-  switchState(NORMAL);
 }
 
 void loop() {
   // comms handling
-//  comms.update();
-
-  // bail out if not connected
-//  if ( ! comms.isConnected() ) return;
+  comms.update();
 
   // check for settings update
   if ( sC.hasUpdate ) {
@@ -171,9 +165,10 @@ void loop() {
 void switchState(systemState state) {
   Serial << F("State.  Changing to ") << state << endl;
   switch ( state ) {
-    case IDLE: stateMachine.transitionTo(Idle); break;
-    case NORMAL: stateMachine.transitionTo(Normal); break;
-    case CENTRAL: stateMachine.transitionTo(Central); break;
+    case STARTUP: stateMachine.transitionTo(Startup); break;
+    case OFFLINE: stateMachine.transitionTo(Offline); break;
+    case ONLINE: stateMachine.transitionTo(Online); break;
+    case SLAVED: stateMachine.transitionTo(Slaved); break;
     case REBOOT: stateMachine.transitionTo(Reboot); break;
     case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
     default:
@@ -181,9 +176,12 @@ void switchState(systemState state) {
   }
 }
 
-void idle() {
-  static byte hue = 0;
+void startup() {
+  
+  // spoof bar last
+//  for( byte i=0; i<N_SENSOR; i++ ) dist.prox[i] = dist.max;
 
+  static byte hue = archHue[myArch];
   EVERY_N_MILLISECONDS(10) {
     // show a throbbing rainbow background
     hue++;
@@ -191,8 +189,16 @@ void idle() {
     rightBack = leftBack;
     leftFront.fill_rainbow(hue + 128, -255 / leftFront.size());
     rightFront = leftFront;
-    FastLED.show();
+
+//    updateBarByDistance();
+
+    pushToHardware();
   }
+
+  // after 5 seconds, transition to Offline, but we could easily get directed to Online before that.
+  static Metro startupTimeout(5000UL);
+  if( startupTimeout.check() ) stateMachine.transitionTo(Offline);
+
 }
 
 void askForDistance() {
@@ -207,38 +213,58 @@ void askForDistance() {
   }
 }
 
-void normal() {
-  // check for an update to concordance
-  if ( sAF[0].hasUpdate && sAF[1].hasUpdate && sAF[2].hasUpdate ) {
-    // are we concordant?
-//    getConcordance();
-    // show it
-    updateLightsByConcordance();
-    // reset
-    sAF[0].hasUpdate = sAF[1].hasUpdate = sAF[2].hasUpdate = false;
+
+/*
+ * Order of operation is critical here.  We have three subsystems that use ISRs:
+ *  FastLED: turns off ISRs
+ *  WiFi: received information may be lost w/o ISR
+ *  SoftwareSerial: received information may be lost w/o ISR
+ *  
+ *  From this, you can see that we need to be very careful with FastLED.show(), and 
+ *  queue those up after we get SoftwareSerial data.  Can't really control when we get
+ *  WiFi packets.
+ *
+ */
+ 
+void offline() {
+  if( comms.isConnected() ) {
+    Serial << F("GOOD.  online!") << endl;
+    stateMachine.transitionTo(Online);
+  } else {
+    normal(false);  
   }
+}
 
-  // check to see if we need to pull new distance data.
-  askForDistance();
+void online() {
+  if( comms.isConnected() ) {
+    normal(true);
+  } else {
+    Serial << F("WARNING.  offline!") << endl;
+    stateMachine.transitionTo(Offline);
+  }
+}
 
-  // get data from ADCs
+void normal(boolean isOnline) {
   static uint32_t counter = 0;
-  if ( ETin.receiveData() ) {
-    // we need to update the LEDs now while we won't screw up SoftwareSerial and WiFi
-    pushToHardware();
+  static boolean publishReady = false;
+  static byte fftIndex = 0;
 
-    counter ++;
-
-    // fill buffer
-    fillBuffer();
-
-    // update bar lights
-    updateLightsByDistance();
+  // what to do with the tops?
+  if( isOnline ) {
+    // check for an update to concordance
+    if ( sAF[0].hasUpdate && sAF[1].hasUpdate && sAF[2].hasUpdate ) {
+      // are we concordant?
+  //    getConcordance();
+      // show it
+      updateTopsByConcordance();
+      // reset
+      sAF[0].hasUpdate = sAF[1].hasUpdate = sAF[2].hasUpdate = false;
+    }
+  } else {
+    // maybe mirror legs that display frequency?
   }
 
-  // do FFT in segements.
-  static byte fftIndex = 0;
-  static boolean publishReady = false;
+  // do FFT in segements when the buffer is ready
   if ( bufferReady ) {
     // compute
     computeFFT(fftIndex);
@@ -254,14 +280,33 @@ void normal() {
     }
   }
 
-  if ( publishReady ) {
-    publishReady = false;
-    // publish
-//    comms.publish(&sAF[comms.myArch()].freq, comms.mySepal(), comms.myArch());
-    // flag that our frequency data are ready
-    sAF[comms.myArch()].hasUpdate = true;
-    // update lights
-    updateLightsByFrequency();
+  // check to see if we need to pull new distance data.
+  askForDistance();
+
+  // get data from ADCs
+  if ( ETin.receiveData() ) {
+    // just tracking actual distance update rate
+    counter ++;
+
+    // fill buffer
+    fillBuffer();
+
+    // update bar lights
+    updateBarByDistance();
+
+    // I don't actually know if sending via WiFi will disrupt SoftwareSerial; worth a look.
+    if ( publishReady ) {
+      publishReady = false;
+      // publish
+      if( isOnline ) comms.publish(&sAF[myArch].freq, myArch);
+      // flag that our frequency data are ready
+      sAF[myArch].hasUpdate = true;
+      // update lights
+      updateLegsByFrequency();
+    }
+
+    // we need to update the LEDs now while we won't screw up SoftwareSerial and WiFi
+    pushToHardware();
   }
 
   const uint32_t reportInterval = 10;
@@ -276,29 +321,12 @@ void normal() {
   }
   
 }
-void central() {
+void slaved() {
   // NOP, currently.  Will look for lighting directions, either through UDP (direct) or MQTT (procedural).
 }
 
-void runStartupPattern() {
-  // find the pins
-  leftBack.fill_solid(CRGB::Purple);
-  rightBack.fill_solid(CRGB::Aqua);
-  leftFront.fill_solid(CRGB::Red);
-  rightFront.fill_solid(CRGB::Blue);
-  FastLED.show();
-  delay(1000);
-
-  leftBack.fill_solid(CRGB::Black);
-  rightBack.fill_solid(CRGB::Black);
-  leftFront.fill_solid(CRGB::Black);
-  rightFront.fill_solid(CRGB::Black);
-  FastLED.show();
-  delay(333);
-}
-
 // adjust lights on the bar with distance readings
-void updateLightsByDistance() {
+void updateBarByDistance() {
 
   // compute using a dummy set of LEDs
   static CRGBArray<N_SENSOR> bar;
@@ -310,8 +338,7 @@ void updateLightsByDistance() {
                            dist.min, dist.max,
                            (uint16_t)0, (uint16_t)255
                          );
-//    bar[i] = CHSV(archHue[comms.myArch()], archSat[comms.myArch()], (byte)intensity);
-    bar[i] = CHSV(archHue[0], archSat[0], (byte)intensity);
+    bar[i] = CHSV(archHue[myArch], archSat[myArch], (byte)intensity);
   }
 
   // assign to hardware. ugly and direct, but we can see what's going on.
@@ -328,7 +355,7 @@ void updateLightsByDistance() {
 }
 
 // adjust lights on the down/legs with frequency readings
-void updateLightsByFrequency() {
+void updateLegsByFrequency() {
   // crappy
   uint16_t avgPower[N_SENSOR] = {0};
   // frequency power
@@ -339,7 +366,7 @@ void updateLightsByFrequency() {
   uint32_t maxSum = 0;
   for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
     for ( byte i = 0; i < N_SENSOR; i++ ) {
-      sumSensors[j] += sAF[comms.myArch()].freq.power[i][j];
+      sumSensors[j] += sAF[myArch].freq.power[i][j];
     }
     if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
   }
@@ -352,7 +379,7 @@ void updateLightsByFrequency() {
                           (uint32_t)0, (uint32_t)255
                         );
     Serial << value << ",";
-    leftDown[j] = CHSV(archHue[0], archSat[0], brighten8_video(constrain(value, 0, 255)));
+    leftDown[j] = CHSV(archHue[myArch], archSat[myArch], brighten8_video(constrain(value, 0, 255)));
   }
   Serial << endl;
 
@@ -360,7 +387,7 @@ void updateLightsByFrequency() {
 }
 
 // update lights on the up/overhead with concordance readings
-void updateLightsByConcordance() {
+void updateTopsByConcordance() {
   // NOP
 }
 
@@ -411,9 +438,9 @@ void dumpFFT() {
   unsigned long now = millis();
 
   for ( uint16_t i = 0; i < N_SENSOR; i++ ) {
-    Serial << now << sep << i << sep << sAF[comms.myArch()].freq.avgPower[i];
+    Serial << now << sep << i << sep << sAF[myArch].freq.avgPower[i];
     for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
-      Serial << sep << sAF[comms.myArch()].freq.power[i][j];
+      Serial << sep << sAF[myArch].freq.power[i][j];
     }
     Serial << endl;
   }
@@ -462,15 +489,17 @@ void computeFFT(byte index) {
   //    Serial.println("Computed magnitudes:");  PrintVector(buffer[i], (samples >> 1), SCL_FREQUENCY);
 
   // store power magnitudes of the lowest N_FREQ_BINS in the spectra
-  sAF[comms.myArch()].freq.avgPower[index] = (uint16_t)real[0];
-  for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) sAF[comms.myArch()].freq.power[index][j] = (uint16_t)real[j + 1];
+  sAF[myArch].freq.avgPower[index] = (uint16_t)real[0];
+  for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) sAF[myArch].freq.power[index][j] = (uint16_t)real[j + 1];
 
   unsigned long dur = (millis() - tic);
+/*
   if ( index == 0 ) {
     Serial << F("Last FFT complete.");
     Serial << F(" duration=") << dur;
     Serial << F(" ms.") << endl;
   }
+  */
 }
 
 #define SCL_INDEX 0x00
@@ -538,7 +567,7 @@ void getConcordance() {
   for ( byte j = 0; j < N_ARCH; j++ ) {
     for ( byte i = 0; i < N_FREQ_BINS; i++ ) {
       // this doesn't look quite right:
-      xBar[j] += vecWeight[j] * (float)sAF[comms.myArch()].freq.power[i][j];
+      xBar[j] += vecWeight[j] * (float)sAF[myArch].freq.power[i][j];
     }
   }
 
@@ -569,7 +598,7 @@ void getConcordance() {
   }
 
   // save
-  switch ( coms.myArch() ) {
+  switch ( myArch ) {
     case 0: // A. B is next. C is prev.
       concordNext = Cor[0, 1]; // corr.AB = mat.cor[1,2]
       concordPrev = Cor[0, 2]; // corr.CA = mat.cor[1,3]

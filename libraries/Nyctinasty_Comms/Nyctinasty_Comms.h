@@ -27,9 +27,14 @@
 
 // roles for each microcontroller
 enum NyctRole {
-  Arch=0,
+	Coordinator=0,
+	Arch0,
+	Arch1,
+	Arch2,
+	Sound,
+	Cannon,
   
-  N_ROLES=1
+	N_ROLES
 };
 
 // how many subscription topics should we malloc() for?
@@ -40,19 +45,19 @@ class NyctComms {
 public:
 
 	// startup. 
-	void begin(NyctRole role, boolean resetRole=false);
+	void begin(NyctRole role=N_ROLES);
 
 	// subscriptions. cover the messages in Nyctinasty_Messages.h
 	void subscribe(SystemCommand *storage, boolean *trueWithUpdate);
 	void subscribe(SimonSystemState *storage, boolean *trueWithUpdate);
-	void subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t archNumber);
-	void subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t sepalNumber, uint8_t archNumber);
+	void subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t archNumber);
+	void subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t archNumber);
 	
 	// publications.  cover the messages in Nyctinasty_Messages.h
 	boolean publish(SystemCommand *message);
 	boolean publish(SimonSystemState *message);
-	boolean publish(SepalArchDistance *message, uint8_t sepalNumber, uint8_t archNumber);
-	boolean publish(SepalArchFrequency *message, uint8_t sepalNumber, uint8_t archNumber);
+	boolean publish(SepalArchDistance *message, uint8_t archNumber);
+	boolean publish(SepalArchFrequency *message, uint8_t archNumber);
 	
 	// call this very frequently
 	void update();
@@ -62,21 +67,16 @@ public:
 	// useful functions.
 	void reboot();
 	void reprogram(String binaryName);
-	uint8_t mySepal();
-	uint8_t myArch();
-	uint8_t nextArch(); // clockwise
-	uint8_t prevArch(); // counterclockwise
+	NyctRole getRole();
 	
 private:
 	// role and indexing
 	NyctRole role;
-	uint8_t sepal, arch;
-	void getsetEEPROM(NyctRole role, boolean resetRole);
+	void getsetEEPROM(NyctRole role);
 	
 	// WiFi
 	WiFiClient wifi;
-	String wifiPassword; // get it from EEPROM
-	void connectWiFi(String ssid="GamesWithFire", uint32_t interval=5000UL);
+	void connectWiFi(String ssid="GamesWithFire", String pwd="safetythird", uint32_t interval=5000UL);
 	
 	// MQTT
 	PubSubClient mqtt;
