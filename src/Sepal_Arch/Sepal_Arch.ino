@@ -84,7 +84,10 @@ struct sC_t {
   SystemCommand settings;
 } sC;
 
+
+
 // our distance updates send as this structure as this topic
+const uint32_t distancePublishRate = 1000UL/15UL; // ms
 SepalArchDistance dist;
 
 // our frequency updates send as this structure as this topic
@@ -248,7 +251,8 @@ void normal(boolean isOnline) {
   static uint32_t counter = 0;
   static boolean publishReady = false;
   static byte fftIndex = 0;
-
+  static Metro pushDistanceInterval(distancePublishRate);
+  
   // what to do with the tops?
   if( isOnline ) {
     // check for an update to concordance
@@ -303,6 +307,10 @@ void normal(boolean isOnline) {
       sAF[myArch].hasUpdate = true;
       // update lights
       updateLegsByFrequency();
+    } else if( pushDistanceInterval.check() ) {
+      // publish distance
+      if( isOnline ) comms.publish(&dist, myArch);
+      pushDistanceInterval.reset();
     }
 
     // we need to update the LEDs now while we won't screw up SoftwareSerial and WiFi
