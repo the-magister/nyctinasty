@@ -24,8 +24,6 @@ NyctRole myRole = Sound; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEP
 #define TX D2 // GPIO4
 // talk to the Sound device device
 SoftwareSerial mySerial(RX, TX, false, 1024);
-#define TsunamiSerial mySerial
-#define __TSUNAMI_SERIAL_ASSIGNED__
 
 // also used
 // D4, GPIO2, BUILTIN_LED
@@ -69,19 +67,18 @@ sAF_t sAF[N_ARCH];
 
 // there will be a correspondence structure getting sent.  just don't know what it is, yet.
 
-Tsunami tsunami;                // Our Tsunami object
+// Our Tsunami object
+Tsunami tsunami;                
 
 void setup() {
   // for local output
   Serial.begin(115200);
-
   Serial << endl << endl << endl << F("Startup begins.") << endl;
 
-  // for remote output
-  Serial << F("Configure softwareserial...");
-  mySerial.begin(115200);
-  Serial << F(" done.") << endl;
+  delay(1000);
 
+  // for remote output
+  Serial << F("Configure Tsunami...");
   // Tsunami startup at 57600
   tsunami.start();
   delay(10);
@@ -94,6 +91,10 @@ void setup() {
   // Enable track reporting from the Tsunami
   tsunami.setReporting(true);
 
+  Serial << F(" done.") << endl;
+
+  delay(1000);
+
   // configure comms
   comms.begin(myRole);
   myRole = comms.getRole();
@@ -105,7 +106,7 @@ void setup() {
     comms.subscribe(&sAF[i].freq, &sAF[i].hasUpdate, i);
     comms.subscribe(&sAD[i].dist, &sAD[i].hasUpdate, i);
   }
-
+  
   Serial << F("Startup complete.") << endl;
 
   // Allow time for the Tsunami to respond with the version string and
@@ -315,7 +316,7 @@ void startup() {
 
   // after N seconds, transition to Offline, but we could easily get directed to Online before that.
   static Metro startupTimeout(10000UL);
-  if ( startupTimeout.check() ) stateMachine.transitionTo(Offline);
+//  if ( startupTimeout.check() ) stateMachine.transitionTo(Offline);
 
 }
 

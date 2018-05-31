@@ -64,6 +64,11 @@
 #define IMIX_OUT3	0x04
 #define IMIX_OUT4	0x08
 
+// MGD added these.
+#include <SoftwareSerial.h>
+extern SoftwareSerial mySerial;
+#define TsunamiSerial mySerial
+#define __TSUNAMI_SERIAL_ASSIGNED__
 
 #ifdef __TSUNAMI_USE_ALTSOFTSERIAL__
 #include "../AltSoftSerial/AltSoftSerial.h"
