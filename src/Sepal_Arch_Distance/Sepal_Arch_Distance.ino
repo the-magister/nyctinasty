@@ -8,7 +8,7 @@
 // Code is intentionally "dumb as a brick".  No OTA update is possible to this uC, so
 // we need this codebase to be stable and bullet-proof.
 
-#define SHOW_SERIAL_DEBUG true
+#define SHOW_SERIAL_DEBUG false
 
 #include <Streaming.h>
 #include <AnalogScanner.h>
@@ -53,7 +53,7 @@ void setup() {
   pinMode(BUILTIN_LED, OUTPUT);
 
   // free run ADC reading
-  int scanOrder[] = {A0, A1, A2, A3, A4, A5, A6, A7};
+  int scanOrder[] = {A1, A2, A3, A4, A5, A6};
   scanner.setScanOrder(N_SENSOR, scanOrder);
   // define callback
   for ( byte i = 0; i < N_SENSOR; i++) scanner.setCallback(scanOrder[i], ISR_getValue);
@@ -75,12 +75,12 @@ uint32_t smoothing = 1;
 volatile uint32_t count = 1; // intentional 1 index.
 void ISR_getValue(int index, int pin, int value) {
   // anything that could be changed by this ISR should be volatile
-  byte ri = A7 - pin;
+  byte ri = constrain(A7 - pin, 0, N_SENSOR-1);
   
   // exponential smoothing
   uint32_t smoothed =((uint32_t)dist.prox[ri] * (smoothing - 1) + (uint32_t)value) / smoothing; 
   dist.prox[ri] = (uint16_t)smoothed;
-  
+
   // increment read counter
   count++;
 }

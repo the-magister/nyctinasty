@@ -84,8 +84,6 @@ struct sC_t {
   SystemCommand settings;
 } sC;
 
-
-
 // our distance updates send as this structure as this topic
 const uint32_t distancePublishRate = 1000UL/15UL; // ms
 SepalArchDistance dist;
@@ -99,8 +97,6 @@ typedef struct {
 sAF_t sAF[N_ARCH];
 
 // FFT object
-const uint32_t distanceSampleRate = 10; // ms
-#define N_FREQ_SAMPLES (uint16_t)(1<<7)  // This value MUST ALWAYS be a power of 2
 uint16_t buffer[N_SENSOR][N_FREQ_SAMPLES];
 boolean bufferReady = false;
 arduinoFFT FFT = arduinoFFT();
@@ -207,7 +203,7 @@ void startup() {
 void askForDistance() {
   // toggled TX pin
   static boolean pinState = false;
-  static Metro distanceUpdate(distanceSampleRate);
+  static Metro distanceUpdate(DISTANCE_SAMPLING_RATE);
 
   if ( distanceUpdate.check() ) {
     distanceUpdate.reset();
@@ -319,10 +315,10 @@ void normal(boolean isOnline) {
 
   const uint32_t reportInterval = 10;
   EVERY_N_SECONDS( reportInterval ) {
-    uint32_t actualDistanceSampleRate = (reportInterval*1000UL)/counter;
+    uint32_t actualDISTANCE_SAMPLING_RATE = (reportInterval*1000UL)/counter;
 
-    Serial << F("Distance sample interval, actual=") << actualDistanceSampleRate;
-    Serial << F(" hypothetical=") << distanceSampleRate;
+    Serial << F("Distance sample interval, actual=") << actualDISTANCE_SAMPLING_RATE;
+    Serial << F(" hypothetical=") << DISTANCE_SAMPLING_RATE;
     Serial << F(" ms.") << endl;
     
     counter=0;
@@ -484,17 +480,22 @@ void computeFFT(byte index) {
 
   // weigh data
   FFT.Windowing(real, N_FREQ_SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);  /* Weigh data */
-  //    Serial.println("Weighed data:"); PrintVector(buffer[i], samples, SCL_TIME);
+  //    Serial.println("Weighed data:"); PrintVector(real, N_FREQ_SAMPLES, SCL_TIME);
 
   // compute FFT
   FFT.Compute(real, imag, N_FREQ_SAMPLES, exponent, FFT_FORWARD); /* Compute FFT */
-  //    Serial.println("Computed Real values:"); PrintVector(buffer[i], samples, SCL_INDEX);
-  //    Serial.println("Computed Imaginary values:"); PrintVector(vImag[i], samples, SCL_INDEX);
+  //    Serial.println("Computed Real values:"); PrintVector(real, N_FREQ_SAMPLES, SCL_INDEX);
+  //    Serial.println("Computed Imaginary values:"); PrintVector(imag, N_FREQ_SAMPLES, SCL_INDEX);
 
   // compute magnitudes
-  //    FFT.ComplexToMagnitude(buffer[i], imag, N_FREQ_SAMPLES); /* Compute magnitudes */
+  //    FFT.ComplexToMagnitude(real, imag, N_FREQ_SAMPLES); /* Compute magnitudes */
+  // stealing a march here, as we don't need the magnitude information for the latter
+  // half of the array
   FFT.ComplexToMagnitude(real, imag, N_FREQ_BINS + 2); /* Compute magnitudes */
-  //    Serial.println("Computed magnitudes:");  PrintVector(buffer[i], (samples >> 1), SCL_FREQUENCY);
+  //    Serial.println("Computed magnitudes:");  PrintVector(real, (N_FREQ_SAMPLES >> 1), SCL_FREQUENCY);
+
+  // find major frequency peak
+//  double x = FFT.MajorPeak(real, N_FREQ_SAMPLES, DISTANCE_SAMPLING_FREQ);
 
   // store power magnitudes of the lowest N_FREQ_BINS in the spectra
   sAF[myArch].freq.avgPower[index] = (uint16_t)real[0];
@@ -523,10 +524,10 @@ void PrintVector(double *vData, uint16_t bufferSize, uint8_t scaleType) {
         abscissa = (i * 1.0);
         break;
       case SCL_TIME:
-        abscissa = ((i * 1.0) / distanceSampleRate);
+        abscissa = ((i * 1.0) / DISTANCE_SAMPLING_FREQ);
         break;
       case SCL_FREQUENCY:
-        abscissa = ((i * 1.0 * distanceSampleRate) / (double)N_FREQ_SAMPLES);
+        abscissa = ((i * 1.0 * DISTANCE_SAMPLING_FREQ) / (double)N_FREQ_SAMPLES);
         break;
     }
     Serial.print(abscissa, 6);

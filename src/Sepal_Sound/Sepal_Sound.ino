@@ -20,8 +20,8 @@ NyctRole myRole = Sound; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEP
 
 // wire it up
 // RX/TX for softserial comms
-#define RX D1 // GPIO5
-#define TX D2 // GPIO4
+#define RX D1 // GPIO5.  wire to Tsunami TX0
+#define TX D2 // GPIO4.  wire to Tsunami RX1
 // talk to the Sound device device
 SoftwareSerial mySerial(RX, TX, false, 1024);
 
@@ -68,7 +68,12 @@ sAF_t sAF[N_ARCH];
 // there will be a correspondence structure getting sent.  just don't know what it is, yet.
 
 // Our Tsunami object
-Tsunami tsunami;                
+Tsunami tsunami;
+
+// some tracks to mess with
+const int BOOTS = 17;
+const int SPARKLE = 18;
+const int CATS = 19;
 
 void setup() {
   // for local output
@@ -106,12 +111,20 @@ void setup() {
     comms.subscribe(&sAF[i].freq, &sAF[i].hasUpdate, i);
     comms.subscribe(&sAD[i].dist, &sAD[i].hasUpdate, i);
   }
-  
+
   Serial << F("Startup complete.") << endl;
 
   // Allow time for the Tsunami to respond with the version string and
   //  number of tracks.
   delay(100);
+
+  // run through some calculations to explain what's in the SepalArchFrequency data item.
+  Serial << F("Actual frequencies in each power bin:") << endl;
+  for(byte j=0; j<N_FREQ_BINS; j++) {
+    Serial << F("Bin=") << j;
+    Serial << F("\tFreq=") << ((float)j+1.0)*(float)DISTANCE_SAMPLING_FREQ/(float)N_FREQ_SAMPLES;
+    Serial << endl;
+  }
 
 }
 
@@ -152,7 +165,7 @@ void startup() {
   static Metro gSeqMetro(6000);          // Sequencer state machine interval timer
 
   static byte gLedState = 0;             // LED State
-  static int  gSeqState = 0;             // Main program sequencer state
+  static int  gSeqState = 5;             // Main program sequencer state
   static int  gRateOffset = 0;           // Tsunami sample-rate offset
   static int  gNumTracks;                // Number of tracks on SD card
 
@@ -175,13 +188,16 @@ void startup() {
         if (tsunami.getVersion(gTsunamiVersion, VERSION_STRING_LEN)) {
           Serial.print(gTsunamiVersion);
           Serial.print("\n");
-          gNumTracks = tsunami.getNumTracks();
-          Serial.print("Number of tracks = ");
-          Serial.print(gNumTracks);
-          Serial.print("\n");
+
         }
         else
           Serial.print("WAV Trigger response not available");
+
+        gNumTracks = tsunami.getNumTracks();
+        Serial.print("Number of tracks = ");
+        Serial.print(gNumTracks);
+        Serial.print("\n");
+
         tsunami.samplerateOffset(0, 0);        // Reset sample rate offset to 0
         tsunami.masterGain(0, 0);              // Reset the master gain to 0dB
 
@@ -315,8 +331,17 @@ void startup() {
   delay(30);
 
   // after N seconds, transition to Offline, but we could easily get directed to Online before that.
-  static Metro startupTimeout(10000UL);
-//  if ( startupTimeout.check() ) stateMachine.transitionTo(Offline);
+  static Metro startupTimeout(5000UL);
+  if ( startupTimeout.check() ) {
+    tsunami.stopAllTracks();
+    tsunami.samplerateOffset(0, 0);
+    tsunami.masterGain(0, 0);              // Reset the master gain to 0dB
+
+    //    tsunami.trackLoop(CATS, 1);                   // Enable Track 4 looping
+    //    tsunami.trackPlayPoly(CATS, 0, true);         // Start Track 4 poly
+
+    stateMachine.transitionTo(Offline);
+  }
 
 }
 
@@ -344,22 +369,55 @@ void normal(boolean isOnline) {
   if ( isOnline ) {
 
     // loop across arches
-    for( byte i=0; i<N_ARCH; i++ ) {
-      if( sAF[i].hasUpdate ) { 
+    for ( byte i = 0; i < N_ARCH; i++ ) {
+      if ( sAF[i].hasUpdate ) {
         // we have an update to frequency information in sAF[i].freq
 
         // make some noise
+        // crappy
+        uint16_t avgPower[N_SENSOR] = {0};
+        // frequency power
+        uint16_t power[N_SENSOR][N_FREQ_BINS] = {{0.0}};
+
+        // do the boneheaded thing and sum up the bins across all sensors
+        uint32_t sumSensors[N_FREQ_BINS] = {0};
+        uint32_t maxSum = 0;
+        for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
+          for ( byte i = 0; i < N_SENSOR; i++ ) {
+            sumSensors[j] += sAF[i].freq.power[i][j];
+          }
+          if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
+        }
+
+        Serial << F("Freq bins: ");
+        // set the LEDs proportional to bins, normalized to maximum bin
+        for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
+          uint32_t value = map( sumSensors[j],
+                                (uint32_t)0, maxSum,
+                                (uint32_t)0, (uint32_t)255
+                              );
+          Serial << value << ",";
+          //    leftDown[j] = CHSV(archHue[myArch], archSat[myArch], brighten8_video(constrain(value, 0, 255)));
+        }
+
+        Serial << endl;
 
         // note that we've handled the update already
-        sAF[i].hasUpdate = false; 
+        sAF[i].hasUpdate = false;
       }
-      if( sAD[i].hasUpdate ) { 
+      if ( sAD[i].hasUpdate ) {
         // we have an update to distance information in sAD[i].dist
 
-        // make some noise
+        // make some noise; simple treshold-based detection of distance-closer-than
+        uint16_t thresh = sAD[i].dist.max >> 1; // div2
+        for ( byte j = 0; j < N_SENSOR; j++ ) {
+          if ( sAD[i].dist.prox[j] > thresh ) {
+            tsunami.trackPlayPoly(j + 1, 0, false);
+          }
+        }
 
         // note that we've handled the update already
-        sAD[i].hasUpdate = false; 
+        sAD[i].hasUpdate = false;
       }
     }
   }
