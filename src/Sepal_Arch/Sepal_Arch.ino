@@ -47,7 +47,7 @@ byte myArch;
 #define COLOR_ORDER RGB
 #define COLOR_CORRECTION TypicalLEDStrip
 #define NUM_PINS 4
-#define LEDS_BAR 4
+#define LEDS_BAR 3
 #define LEDS_VERT 20
 #define LEDS_PER_PIN LEDS_BAR+LEDS_VERT
 
@@ -346,6 +346,7 @@ void updateBarByDistance() {
   }
 
   // assign to hardware. ugly and direct, but we can see what's going on.
+/*  
   leftBack[3] = leftFront[3] = bar[0];
   leftBack[2] = leftFront[2] = bar[1];
   leftBack[1] = leftFront[1] = bar[2];
@@ -355,6 +356,14 @@ void updateBarByDistance() {
   rightBack[1] = rightFront[1] = bar[5];
   rightBack[2] = rightFront[2] = bar[6];
   rightBack[3] = rightFront[3] = bar[7];
+*/
+  leftBack[2] = leftFront[2] = bar[0];
+  leftBack[1] = leftFront[1] = bar[1];
+  leftBack[0] = leftFront[0] = bar[2];
+
+  rightBack[0] = rightFront[0] = bar[3];
+  rightBack[1] = rightFront[1] = bar[4];
+  rightBack[2] = rightFront[2] = bar[5];
 
 }
 

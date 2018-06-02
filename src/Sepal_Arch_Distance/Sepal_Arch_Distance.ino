@@ -8,7 +8,7 @@
 // Code is intentionally "dumb as a brick".  No OTA update is possible to this uC, so
 // we need this codebase to be stable and bullet-proof.
 
-#define SHOW_SERIAL_DEBUG false
+#define SHOW_SERIAL_DEBUG true
 
 #include <Streaming.h>
 #include <AnalogScanner.h>
@@ -75,7 +75,7 @@ uint32_t smoothing = 1;
 volatile uint32_t count = 1; // intentional 1 index.
 void ISR_getValue(int index, int pin, int value) {
   // anything that could be changed by this ISR should be volatile
-  byte ri = constrain(A7 - pin, 0, N_SENSOR-1);
+  byte ri = A6 - pin;
   
   // exponential smoothing
   uint32_t smoothed =((uint32_t)dist.prox[ri] * (smoothing - 1) + (uint32_t)value) / smoothing; 
