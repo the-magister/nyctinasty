@@ -474,6 +474,9 @@ void dumpFFT() {
 */
 double imag[N_FREQ_SAMPLES];
 double real[N_FREQ_SAMPLES];
+#define SCL_INDEX 0x00
+#define SCL_TIME 0x01
+#define SCL_FREQUENCY 0x02
 void computeFFT(byte index) {
   // track time
   unsigned long tic = millis();
@@ -497,15 +500,16 @@ void computeFFT(byte index) {
   //    Serial.println("Computed Imaginary values:"); PrintVector(imag, N_FREQ_SAMPLES, SCL_INDEX);
 
   // compute magnitudes
-  //    FFT.ComplexToMagnitude(real, imag, N_FREQ_SAMPLES); /* Compute magnitudes */
+//  FFT.ComplexToMagnitude(real, imag, N_FREQ_SAMPLES); /* Compute magnitudes */
   // stealing a march here, as we don't need the magnitude information for the latter
   // half of the array
   FFT.ComplexToMagnitude(real, imag, N_FREQ_BINS + 2); /* Compute magnitudes */
-  //    Serial.println("Computed magnitudes:");  PrintVector(real, (N_FREQ_SAMPLES >> 1), SCL_FREQUENCY);
+//  Serial.println("Computed magnitudes:");  PrintVector(real, (N_FREQ_SAMPLES >> 1), SCL_FREQUENCY);
 
   // find major frequency peak
-//  double x = FFT.MajorPeak(real, N_FREQ_SAMPLES, DISTANCE_SAMPLING_FREQ);
-
+  double x = FFT.MajorPeak(real, N_FREQ_SAMPLES, DISTANCE_SAMPLING_FREQ);
+//  if( index==5 ) Serial << F("Peak: ") << x << endl;
+  
   // store power magnitudes of the lowest N_FREQ_BINS in the spectra
   sAF[myArch].freq.avgPower[index] = (uint16_t)real[0];
   for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) sAF[myArch].freq.power[index][j] = (uint16_t)real[j + 1];
@@ -519,10 +523,6 @@ void computeFFT(byte index) {
   }
   */
 }
-
-#define SCL_INDEX 0x00
-#define SCL_TIME 0x01
-#define SCL_FREQUENCY 0x02
 void PrintVector(double *vData, uint16_t bufferSize, uint8_t scaleType) {
   for (uint16_t i = 0; i < bufferSize; i++)   {
     double abscissa;

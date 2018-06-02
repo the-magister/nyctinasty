@@ -369,8 +369,8 @@ void normal(boolean isOnline) {
   if ( isOnline ) {
 
     // loop across arches
-    for ( byte i = 0; i < N_ARCH; i++ ) {
-      if ( sAF[i].hasUpdate ) {
+    for ( byte up = 0; up < N_ARCH; up++ ) {
+      if ( sAF[up].hasUpdate ) {
         // we have an update to frequency information in sAF[i].freq
 
         // make some noise
@@ -384,7 +384,7 @@ void normal(boolean isOnline) {
         uint32_t maxSum = 0;
         for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
           for ( byte i = 0; i < N_SENSOR; i++ ) {
-            sumSensors[j] += sAF[i].freq.power[i][j];
+            sumSensors[j] += sAF[up].freq.power[i][j];
           }
           if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
         }
@@ -399,25 +399,24 @@ void normal(boolean isOnline) {
           Serial << value << ",";
           //    leftDown[j] = CHSV(archHue[myArch], archSat[myArch], brighten8_video(constrain(value, 0, 255)));
         }
-
         Serial << endl;
-
+        
         // note that we've handled the update already
-        sAF[i].hasUpdate = false;
+        sAF[up].hasUpdate = false;
       }
-      if ( sAD[i].hasUpdate ) {
+      if ( sAD[up].hasUpdate ) {
         // we have an update to distance information in sAD[i].dist
 
         // make some noise; simple treshold-based detection of distance-closer-than
-        uint16_t thresh = sAD[i].dist.max >> 1; // div2
+        uint16_t thresh = sAD[up].dist.max >> 1; // div2
         for ( byte j = 0; j < N_SENSOR; j++ ) {
-          if ( sAD[i].dist.prox[j] > thresh ) {
+          if ( sAD[up].dist.prox[j] > thresh ) {
             tsunami.trackPlayPoly(j + 1, 0, false);
           }
         }
 
         // note that we've handled the update already
-        sAD[i].hasUpdate = false;
+        sAD[up].hasUpdate = false;
       }
     }
   }
