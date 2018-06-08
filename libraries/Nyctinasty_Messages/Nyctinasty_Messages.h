@@ -63,4 +63,22 @@ typedef struct {
 	// the specific frequency of power[i][j] is (j+1)*DISTANCE_SAMPLING_FREQ/N_FREQ_SAMPLES in Hz
 } SepalArchFrequency;
 
+// water works control
+#define N_PUMP 4 // number of pumps we're controlling
+enum pumpState {
+	// pretty self-explanatory.  these are useful when a HIGH pin state means OFF.
+	OFF,		// 0==LOW
+	ON			// 1==HIGH
+};
+enum routeState {
+	FOUNTAIN,	// 0==LOW
+	CANNON		// 1==HIGH
+};
+typedef struct {
+	// state of the four pumps; with default
+	pumpState pump[N_PUMP] = {OFF};
+	// state of the output; with default
+	routeState route = {FOUNTAIN};
+} WaterWorks;
+
 #endif

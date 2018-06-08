@@ -32,9 +32,18 @@ enum NyctRole {
 	Arch1,
 	Arch2,
 	Sound,
-	Cannon,
+	Water,
   
 	N_ROLES
+};
+// helpful decodes for the humans.  must be unique.
+const String NyctRoleString[] = {
+	"Coordinator",
+	"Arch-0",
+	"Arch-1",
+	"Arch-2",
+	"Sound",
+	"Water"
 };
 
 // how many subscription topics should we malloc() for?
@@ -52,12 +61,14 @@ public:
 	void subscribe(SimonSystemState *storage, boolean *trueWithUpdate);
 	void subscribe(SepalArchDistance *storage, boolean *trueWithUpdate, uint8_t archNumber);
 	void subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, uint8_t archNumber);
+	void subscribe(WaterWorks *storage, boolean *trueWithUpdate);
 	
 	// publications.  cover the messages in Nyctinasty_Messages.h
 	boolean publish(SystemCommand *message);
 	boolean publish(SimonSystemState *message);
 	boolean publish(SepalArchDistance *message, uint8_t archNumber);
 	boolean publish(SepalArchFrequency *message, uint8_t archNumber);
+	boolean publish(WaterWorks *message);
 	
 	// call this very frequently
 	void update();

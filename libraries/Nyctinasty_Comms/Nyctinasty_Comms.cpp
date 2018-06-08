@@ -8,16 +8,6 @@ void setOnLED();
 void setOffLED();
 void toggleLED();
 
-// helpful decodes for the humans.  must be unique.
-const String NyctRoleString[] = {
-	"Coordinator",
-	"Arch-0",
-	"Arch-1",
-	"Arch-2",
-	"Sound",
-	"Cannon"
-};
-
 // public methods
 
 void NyctComms::begin(NyctRole role) {
@@ -78,6 +68,7 @@ const String settingsString = "nyc/Setting";
 const String distanceString = "nyc/Distance";
 const String frequencyString = "nyc/Frequency";
 const String simonString = "nyc/Fx/Simon";
+const String waterString = "nyc/Water";
 const String sep = "/";
 void NyctComms::subscribe(SystemCommand *storage, boolean *trueWithUpdate) {
 	subscribe(
@@ -103,6 +94,12 @@ void NyctComms::subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, 
 	subscribe(
 		frequencyString + sep + a, 
 		(void *)storage, trueWithUpdate, 0
+	);
+}
+void NyctComms::subscribe(WaterWorks *storage, boolean *trueWithUpdate) {
+	subscribe(
+		waterString, 
+		(void *)storage, trueWithUpdate, 1
 	);
 }
 
@@ -131,6 +128,12 @@ boolean NyctComms::publish(SepalArchFrequency *storage, uint8_t archNumber) {
 	return publish(
 		frequencyString + sep + a, 
 		(uint8_t *)storage, (unsigned int)sizeof(SepalArchFrequency)
+	);
+}
+boolean NyctComms::publish(WaterWorks *storage) {
+	return publish(
+		waterString, 
+		(uint8_t *)storage, (unsigned int)sizeof(WaterWorks)
 	);
 }
 
