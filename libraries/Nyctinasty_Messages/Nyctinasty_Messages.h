@@ -76,7 +76,7 @@ enum routeState {
 };
 typedef struct {
 	// state of the four pumps; with default
-	pumpState pump[N_PUMP] = {OFF};
+	pumpState pump[N_PUMP] = {OFF, OFF, OFF, OFF};
 	// state of the output; with default
 	routeState route = {FOUNTAIN};
 } WaterWorks;
