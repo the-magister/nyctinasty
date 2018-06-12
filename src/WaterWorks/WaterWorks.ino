@@ -12,7 +12,7 @@
 
 // my role and arch number
 //NyctRole myRole = WaterRoute; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
-NyctRole myRole = WaterPumps1; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
+//NyctRole myRole = WaterPumps1; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
 //NyctRole myRole = WaterPumps2; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
 
 // wire it up
@@ -28,6 +28,9 @@ NyctRole myRole = WaterPumps1; // see Nyctinasty_Comms.h; set N_ROLES to pull fr
 
 // comms
 NyctComms comms;
+
+// timeout and turn off when we're Offline
+unsigned long offlineTimeout = 30000;
 
 // define a state for every systemState
 void startup(); State Startup = State(startup);
@@ -56,7 +59,6 @@ void applyToHardware() {
   switch (myRole) {
     case WaterRoute:
       digitalWrite(PIN_CANNON, pC.water.route);
-      pinMode(PIN_CANNON, OUTPUT);
       Serial << "Route: ";
       Serial << (pC.water.route == FOUNTAIN ? "Fountain" : "Cannon") << endl;
 
@@ -64,12 +66,10 @@ void applyToHardware() {
 
     case WaterPumps1:
       digitalWrite(PIN_PUMP1, pC.water.pump[0]);
-      pinMode(PIN_PUMP1, OUTPUT);
       Serial << "Pump 1: ";
       Serial << (pC.water.pump[0] == ON ? "ON" : "off") << endl;
 
       digitalWrite(PIN_PUMP2, pC.water.pump[1]);
-      pinMode(PIN_PUMP2, OUTPUT);
       Serial << "Pump 2: ";
       Serial << (pC.water.pump[1] == ON ? "ON" : "off") << endl;
 
@@ -77,12 +77,10 @@ void applyToHardware() {
 
     case WaterPumps2:
       digitalWrite(PIN_PUMP3, pC.water.pump[2]);
-      pinMode(PIN_PUMP3, OUTPUT);
       Serial << "Pump 3: ";
       Serial << (pC.water.pump[2] == ON ? "ON" : "off") << endl;
 
       digitalWrite(PIN_PUMP4, pC.water.pump[3]);
-      pinMode(PIN_PUMP4, OUTPUT);
       Serial << "Pump 4: ";
       Serial << (pC.water.pump[3] == ON ? "ON" : "off") << endl;
 
@@ -91,6 +89,13 @@ void applyToHardware() {
 }
 
 void setup() {
+  // set them off, then enable pin.
+  digitalWrite(PIN_CANNON, LOW); pinMode(PIN_CANNON, OUTPUT);
+  digitalWrite(PIN_PUMP1, LOW); pinMode(PIN_PUMP1, OUTPUT);
+  digitalWrite(PIN_PUMP2, LOW); pinMode(PIN_PUMP2, OUTPUT);
+  digitalWrite(PIN_PUMP3, LOW); pinMode(PIN_PUMP3, OUTPUT);
+  digitalWrite(PIN_PUMP4, LOW); pinMode(PIN_PUMP4, OUTPUT);
+
   // for local output
   Serial.begin(115200);
   Serial << endl << endl << endl << F("Startup begins.") << endl;
@@ -187,7 +192,7 @@ void normal(boolean isOnline) {
     pC.hasUpdate = false;
   }
 
-  static Metro shutdownInterval(5000UL);
+  static Metro shutdownInterval(offlineTimeout);
   if ( isOnline ) {
     shutdownInterval.reset();
   } else if ( shutdownInterval.check() ) {
