@@ -11,7 +11,9 @@
 #include "Nyctinasty_Comms.h"
 
 // my role and arch number
-NyctRole myRole = WaterRoute; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
+//NyctRole myRole = WaterRoute; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
+NyctRole myRole = WaterPumps1; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
+//NyctRole myRole = WaterPumps2; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
 
 // wire it up
 // devices with the relay shield only have access to D1
