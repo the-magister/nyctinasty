@@ -6,7 +6,12 @@
 
 #include <Streaming.h>
 #include <Metro.h>
+#include <arduinoFFT.h>
+#include <SoftwareSerial.h>
+#include <SoftEasyTransfer.h>
 #include <FiniteStateMachine.h>
+#define FASTLED_INTERRUPT_RETRY_COUNT 1
+#include <FastLED.h>
 #include "Nyctinasty_Messages.h"
 #include "Nyctinasty_Comms.h"
 
@@ -14,23 +19,21 @@
 #define SHOW_SERIAL_DEBUG true
 
 // my role and arch number
-NyctRole myRole = Water; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
+NyctRole myRole = Arch2; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
 // Arch0, Arch1, Arch2 for bootstrapping a new controller.
 byte myArch;
 
 // wire it up
-#define PIN_SWITCH D1
-#define PIN_PUMP_1 D5
-#define PIN_PUMP_2 D6
-#define PIN_PUMP_3 D7
-#define PIN_PUMP_4 D8
-
+#define RX D1 // GPIO5
+#define TX D2 // GPIO4 
+// voltage divider: 5V->3.3V
+// TX to RX_ESP via 820 Ohm resistor
+// RX_ESP to GND via 1500 Ohm resistor
 // LEDs are connected:
 // D5, GPIO14
 // D6, GPIO12
 // D7, GPIO13
 // D8, GPIO15
-
 // also used
 // D4, GPIO2, BUILTIN_LED
 
