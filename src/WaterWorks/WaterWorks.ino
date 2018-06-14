@@ -11,9 +11,10 @@
 #include "Nyctinasty_Comms.h"
 
 // my role and arch number
-//NyctRole myRole = WaterRoute; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
-//NyctRole myRole = WaterPumps1; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
-//NyctRole myRole = WaterPumps2; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
+NyctRole myRole = N_ROLES; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
+//NyctRole myRole = WaterRoute; 
+//NyctRole myRole = WaterPumps1; 
+//NyctRole myRole = WaterPumps2; 
 
 // wire it up
 // devices with the relay shield only have access to D1
@@ -28,9 +29,6 @@
 
 // comms
 NyctComms comms;
-
-// timeout and turn off when we're Offline
-unsigned long offlineTimeout = 30000;
 
 // define a state for every systemState
 void startup(); State Startup = State(startup);
@@ -180,8 +178,14 @@ void online() {
     normal(true);
   } else {
     Serial << F("WARNING.  offline!") << endl;
+    // reset back to defaults
+    WaterWorks tmp;
+    pC.water = tmp;
+    pC.hasUpdate = true;
+
     stateMachine.transitionTo(Offline);
   }
+  
 }
 
 void normal(boolean isOnline) {
@@ -190,16 +194,6 @@ void normal(boolean isOnline) {
     // and do it.
     applyToHardware();
     pC.hasUpdate = false;
-  }
-
-  static Metro shutdownInterval(offlineTimeout);
-  if ( isOnline ) {
-    shutdownInterval.reset();
-  } else if ( shutdownInterval.check() ) {
-    // reset back to defaults
-    WaterWorks tmp;
-    pC.water = tmp;
-    pC.hasUpdate = true;
   }
 }
 

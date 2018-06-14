@@ -1,0 +1,44 @@
+### libraries
+require(PKNCA)
+
+### model
+C.t = function( k10, ka, t, Dose=1, Vc_F ) {
+	Dose/Vc_F * ka/(ka-k10) * ( exp(-k10*t) - exp(-ka*t) )
+}
+
+### parameters
+# borrowing Lucentis parameters from Xu et.al. 2013
+VC_F = 3.01 # L
+Ka = 0.0806 # 1/d
+CL_F = 24 # L/d
+K10 = CL_F/VC_F # 1/d
+print(K10/Ka) # 99-fold faster systemic elimination than intravitreal absorption
+
+### run a simulation
+times = seq(from=0, to=28, len=100) # d
+dose = 0.5 # mg
+C = C.t(K10, Ka, times, dose, VC_F)
+plot(times, C, type='l')
+
+### compute half-life, the old-fashioned way:
+Thalf.f = function(t, C) {
+	pk.calc.half.life(C, times)$half.life
+}
+thalf = Thalf.f( times, C )
+print(thalf) # 8.6 days
+
+### how does that compare to log(2)/Ka and log(2)/K10?
+print( log(2)/Ka ) # 8.6 days
+print( log(2)/K10 ) # 0.0869 days
+
+### CONCLUSION
+# When K10 >> Ka, the terminal half-life is approximately log(2)/KA, 
+
+### what happens when they're approximately equal?
+print( Thalf.f( times, C.t(Ka*10, Ka, times, dose, VC_F) ) )  # 8.64 days
+print( Thalf.f( times, C.t(Ka*5, Ka, times, dose, VC_F) ) )  # 8.72 days
+print( Thalf.f( times, C.t(Ka*2, Ka, times, dose, VC_F) ) )  # 10.0 days
+print( Thalf.f( times, C.t(K10, K10/2, times, dose, VC_F) ) )  # 0.174 days
+print( Thalf.f( times, C.t(K10, K10/5, times, dose, VC_F) ) )  # 0.434 days
+print( Thalf.f( times, C.t(K10, K10/10, times, dose, VC_F) ) )  # 0.869 days
+
