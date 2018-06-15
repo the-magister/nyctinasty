@@ -50,6 +50,16 @@ struct pC_t {
 const uint32_t pumpChangeInterval = 1000UL;
 byte targetPumpLevel = 0;
 
+/*
+Level PrimePumps  BoostPumps
+0     0           0
+1     1           0
+2     1           1
+3     2           1
+4     2           2
+*/
+
+
 void setup() {
   // for local output
   Serial.begin(115200);
