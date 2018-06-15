@@ -51,8 +51,8 @@ typedef struct {
 #define NYQUIST_LIMIT DISTANCE_SAMPLING_FREQ/2 // 50 Hz
 
 // but, given Nyquist limit, only the first half of the bins are interpretable
-// still, we just don't expect people to move at 50 Hz, right?  take the first handful (low freq)
-//   bins as relating to meaningful human motion.
+// still, we just don't expect people to move at 50 Hz, right?  
+// take the first handful (low freq) bins as relating to meaningful human motion.
 #define HIGHEST_FREQ_BIN 16 // max: (N_FREQ_SAMPLES/2)
 #define N_FREQ_BINS HIGHEST_FREQ_BIN
 typedef struct {
@@ -60,11 +60,12 @@ typedef struct {
 	uint16_t avgPower[N_SENSOR]={0};
 	// frequency power
 	uint16_t power[N_SENSOR][N_FREQ_BINS]={{0}};
-	// the specific frequency of power[i][j] is (j+1)*DISTANCE_SAMPLING_FREQ/N_FREQ_SAMPLES in Hz
+		// the specific frequency of power[i][j] is (j+1)*DISTANCE_SAMPLING_FREQ/N_FREQ_SAMPLES in Hz
+	// the (interpolated) frequency of maximum power per sensor
+	float peakFreq[N_SENSOR]={0};
 } SepalArchFrequency;
 
 // water works control
-#define N_PUMP 4 // number of pumps we're controlling
 enum pumpState {
 	// pretty self-explanatory.  these are useful when a HIGH pin state means OFF.
 	OFF,		// 0==LOW
@@ -76,7 +77,10 @@ enum routeState {
 };
 typedef struct {
 	// state of the four pumps; with default
-	pumpState pump[N_PUMP] = {OFF, OFF, OFF, OFF};
+	// pump pair with priming, so one of these must be on first
+	pumpState primePump[2] = {OFF, OFF};
+	// pump pair without priming
+	pumpState boostPump[2] = {OFF, OFF};
 	// state of the output; with default
 	routeState route = {FOUNTAIN};
 } WaterWorks;

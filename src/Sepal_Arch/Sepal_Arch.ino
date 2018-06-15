@@ -246,19 +246,20 @@ void normal(boolean isOnline) {
   static byte fftIndex = 0;
   static Metro pushDistanceInterval(distancePublishRate);
   
-  // what to do with the tops?
-  if( isOnline ) {
-    // check for an update to concordance
-    if ( sAF[0].hasUpdate && sAF[1].hasUpdate && sAF[2].hasUpdate ) {
-      // are we concordant?
-  //    getConcordance();
-      // show it
-      updateTopsByConcordance();
-      // reset
-      sAF[0].hasUpdate = sAF[1].hasUpdate = sAF[2].hasUpdate = false;
-    }
-  } else {
-    // maybe mirror legs that display frequency?
+  // check for an update to frequency data
+  if ( sAF[0].hasUpdate || sAF[1].hasUpdate || sAF[2].hasUpdate ) {
+    // update lower lights by frequency data
+//      updateLegsByFrequency();
+    updateLegsByPeakFreq();
+    
+    // compute concordance
+//    getConcordance();
+
+    // show it
+//    updateTopsByConcordance();
+
+    // reset
+    sAF[0].hasUpdate = sAF[1].hasUpdate = sAF[2].hasUpdate = false;
   }
 
   // do FFT in segements when the buffer is ready
@@ -298,8 +299,6 @@ void normal(boolean isOnline) {
       if( isOnline ) comms.publish(&sAF[myArch].freq, myArch);
       // flag that our frequency data are ready
       sAF[myArch].hasUpdate = true;
-      // update lights
-      updateLegsByFrequency();
     } else if( pushDistanceInterval.check() ) {
       // publish distance
       if( isOnline ) comms.publish(&dist, myArch);
@@ -393,6 +392,44 @@ void updateLegsByFrequency() {
   }
   Serial << endl;
 
+  rightDown = leftDown;
+}
+
+// adjust lights on down/legs with peak frequency readings
+void updateLegsByPeakFreq() {
+
+  // some constants
+  // maximum possible frequency bin
+  const byte maxFreq = ceil( (N_FREQ_BINS+1)*DISTANCE_SAMPLING_FREQ/N_FREQ_SAMPLES );
+  const byte minFreq = floor( (0+1)*DISTANCE_SAMPLING_FREQ/N_FREQ_SAMPLES );
+  const byte fadeEachUpdate = 128;
+  
+  // fade lighting
+  leftDown.fadeToBlackBy( fadeEachUpdate );
+
+  // loop across each arch's information
+  for( byte a=0; a<N_ARCH; a++ ) {
+    // loop across each sensor
+    for( byte s=0; s<N_SENSOR; s++ ) {
+      // get the integer frequency above and below
+      byte roundUp = ceil(sAF[a].freq.peakFreq[s]);
+      byte roundDown = floor(sAF[a].freq.peakFreq[s]);
+      
+      // map to lighting position
+      byte lightUp = map(roundUp, minFreq, maxFreq, 0, LEDS_VERT-1);
+      byte lightDown = map(roundDown, minFreq, maxFreq, 0, LEDS_VERT-1);
+      
+      // pick a color; my color is the brightest.
+      CHSV color = CHSV(archHue[a], 255, a == myArch ? 255 : 128 );
+
+      // apply
+      leftDown[lightUp] += color;
+      leftDown[lightDown] += color;
+    }
+    
+  }
+
+  // What immortal hand or eye / Could frame thy fearful symmetry?
   rightDown = leftDown;
 }
 
@@ -504,15 +541,18 @@ void computeFFT(byte index) {
 //  Serial.println("Computed magnitudes:");  PrintVector(real, (N_FREQ_SAMPLES >> 1), SCL_FREQUENCY);
 
   // find major frequency peak
-  double x = FFT.MajorPeak(real, N_FREQ_SAMPLES, DISTANCE_SAMPLING_FREQ);
+  double peakFreq = FFT.MajorPeak(real, N_FREQ_SAMPLES, DISTANCE_SAMPLING_FREQ);
 //  if( index==5 ) Serial << F("Peak: ") << x << endl;
   
   // store power magnitudes of the lowest N_FREQ_BINS in the spectra
   sAF[myArch].freq.avgPower[index] = (uint16_t)real[0];
   for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) sAF[myArch].freq.power[index][j] = (uint16_t)real[j + 1];
 
-  unsigned long dur = (millis() - tic);
+  // store peak frequency
+  sAF[myArch].freq.peakFreq[index] = (float)peakFreq;
+  
 /*
+  unsigned long dur = (millis() - tic);
   if ( index == 0 ) {
     Serial << F("Last FFT complete.");
     Serial << F(" duration=") << dur;

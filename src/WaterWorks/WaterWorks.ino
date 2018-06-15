@@ -63,24 +63,24 @@ void applyToHardware() {
       break;
 
     case WaterPumps1:
-      digitalWrite(PIN_PUMP1, pC.water.pump[0]);
-      Serial << "Pump 1: ";
-      Serial << (pC.water.pump[0] == ON ? "ON" : "off") << endl;
+      digitalWrite(PIN_PUMP1, pC.water.primePump[0]);
+      Serial << "(Prime) Pump 1: ";
+      Serial << (pC.water.primePump[0] == ON ? "ON" : "off") << endl;
 
-      digitalWrite(PIN_PUMP2, pC.water.pump[1]);
-      Serial << "Pump 2: ";
-      Serial << (pC.water.pump[1] == ON ? "ON" : "off") << endl;
+      digitalWrite(PIN_PUMP2, pC.water.primePump[1]);
+      Serial << "(Prime) Pump 2: ";
+      Serial << (pC.water.primePump[1] == ON ? "ON" : "off") << endl;
 
       break;
 
     case WaterPumps2:
-      digitalWrite(PIN_PUMP3, pC.water.pump[2]);
-      Serial << "Pump 3: ";
-      Serial << (pC.water.pump[2] == ON ? "ON" : "off") << endl;
+      digitalWrite(PIN_PUMP3, pC.water.boostPump[0]);
+      Serial << "(Boost) Pump 1: ";
+      Serial << (pC.water.boostPump[0] == ON ? "ON" : "off") << endl;
 
-      digitalWrite(PIN_PUMP4, pC.water.pump[3]);
-      Serial << "Pump 4: ";
-      Serial << (pC.water.pump[3] == ON ? "ON" : "off") << endl;
+      digitalWrite(PIN_PUMP4, pC.water.boostPump[1]);
+      Serial << "(Boost) Pump 2: ";
+      Serial << (pC.water.boostPump[1] == ON ? "ON" : "off") << endl;
 
       break;
   }
@@ -125,10 +125,10 @@ void loop() {
     char c = Serial.read();
     switch (c) {
       case 'r': pC.water.route = (pC.water.route == CANNON) ? FOUNTAIN : CANNON; pC.hasUpdate = true; break;
-      case '1': pC.water.pump[0] = (pC.water.pump[0] == ON) ? OFF : ON; pC.hasUpdate = true; break;
-      case '2': pC.water.pump[1] = (pC.water.pump[1] == ON) ? OFF : ON; pC.hasUpdate = true; break;
-      case '3': pC.water.pump[2] = (pC.water.pump[2] == ON) ? OFF : ON; pC.hasUpdate = true; break;
-      case '4': pC.water.pump[3] = (pC.water.pump[3] == ON) ? OFF : ON; pC.hasUpdate = true; break;
+      case '1': pC.water.primePump[0] = (pC.water.primePump[0] == ON) ? OFF : ON; pC.hasUpdate = true; break;
+      case '2': pC.water.primePump[1] = (pC.water.primePump[1] == ON) ? OFF : ON; pC.hasUpdate = true; break;
+      case '3': pC.water.boostPump[0] = (pC.water.boostPump[0] == ON) ? OFF : ON; pC.hasUpdate = true; break;
+      case '4': pC.water.boostPump[1] = (pC.water.boostPump[1] == ON) ? OFF : ON; pC.hasUpdate = true; break;
       case '\n': break;
       case '\r': break;
       default:
