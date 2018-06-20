@@ -19,7 +19,7 @@
 #define SHOW_SERIAL_DEBUG true
 
 // my role and arch number
-NyctRole myRole = Arch2; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
+NyctRole myRole = N_ROLES; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
 // Arch0, Arch1, Arch2 for bootstrapping a new controller.
 byte myArch;
 
@@ -250,7 +250,7 @@ void normal(boolean isOnline) {
   if ( sAF[0].hasUpdate || sAF[1].hasUpdate || sAF[2].hasUpdate ) {
     // update lower lights by frequency data
 //      updateLegsByFrequency();
-    updateLegsByPeakFreq();
+//    updateLegsByPeakFreq();
     
     // compute concordance
 //    getConcordance();
@@ -420,7 +420,9 @@ void updateLegsByPeakFreq() {
       byte lightDown = map(roundDown, minFreq, maxFreq, 0, LEDS_VERT-1);
       
       // pick a color; my color is the brightest.
-      CHSV color = CHSV(archHue[a], 255, a == myArch ? 255 : 128 );
+      byte bright = 128;
+      if( a == myArch ) bright = 255;
+      CHSV color = CHSV(archHue[a], 255, bright );
 
       // apply
       leftDown[lightUp] += color;
@@ -587,87 +589,4 @@ void PrintVector(double *vData, uint16_t bufferSize, uint8_t scaleType) {
   Serial.println();
 }
 
-/*
-void getConcordance() {
 
-  // this is all wrong.  need 2d correlation analysis
-  // https://en.wikipedia.org/wiki/Two-dimensional_correlation_analysis
-
-  // maybe we want to push this to a separate microcontroller, Sepal_Concordance
-  // alternately, each Arch can calculate their concordance clockwise (or ccw) and publish
-  // that
-
-  // normalize weights to sum to 1.0
-  static float vecWeight[N_FREQ_BINS] = {0.0};
-  // scale covariance terms
-  static float covTerm = 0.0;
-
-  // we can compute a few things once.
-  static float isInitialized = false;
-  if ( ! isInitialized ) {
-    float sumWeight = 0;
-    for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-      sumWeight += WeightFrequency[b];
-    }
-    for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-      vecWeight[b] = (float)WeightFrequency[b] / sumWeight;
-      covTerm += vecWeight[b] * vecWeight[b];
-    }
-    covTerm = 1.0 / (1.0 - covTerm);
-    isInitialized = true;
-  }
-
-  // weighted mean vector
-  float xBar[N_ARCH] = {0.0};
-  for ( byte j = 0; j < N_ARCH; j++ ) {
-    for ( byte i = 0; i < N_FREQ_BINS; i++ ) {
-      // this doesn't look quite right:
-      xBar[j] += vecWeight[j] * (float)sAF[myArch].freq.power[i][j];
-    }
-  }
-
-  // weighted covariance matrix
-  float Cov[N_ARCH][N_ARCH] = {0.0};
-  for ( byte a1 = 0; a1 < N_ARCH; a1++ ) {
-    for ( byte a2 = a1; a2 < N_ARCH; a2++ ) { // symmetry
-      float sum = 0.0;
-      for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-        sum += vecWeight[b] *
-               ((float)sAF[a1].freq[b] - xBar[a1]) *
-               ((float)sAF[a2].freq[b] - xBar[a2]);
-      }
-      Cov[a1][a2] = covTerm * sum;
-    }
-  }
-
-  // weighted correlation matrix
-  float Cor[N_ARCH][N_ARCH] = {0.0};
-  float Is[N_ARCH];
-  for ( byte a = 0; a < N_ARCH; a++ ) {
-    Is[a] = 1.0 / pow(Cov[a][a], 0.5);
-  }
-  for ( byte a1 = 0; a1 < N_ARCH; a1++ ) {
-    for ( byte a2 = a1; a2 < N_ARCH; a2++ ) { // symmetry
-      if ( a1 != a2 ) Cor[a1, a2] = Is[a1] * Cov[a1][a2] * Is[a2];
-    }
-  }
-
-  // save
-  switch ( myArch ) {
-    case 0: // A. B is next. C is prev.
-      concordNext = Cor[0, 1]; // corr.AB = mat.cor[1,2]
-      concordPrev = Cor[0, 2]; // corr.CA = mat.cor[1,3]
-      break;
-    case 1: // B. C is next. A is prev.
-      concordNext = Cor[1, 2]; // corr.BC = mat.cor[2,3]
-      concordPrev = Cor[0, 1]; // corr.AB = mat.cor[1,2]
-      break;
-    case 2: // C. A is next. B is prev.
-      concordNext = Cor[0, 2]; // corr.CA = mat.cor[1,3]
-      concordPrev = Cor[1, 2]; // corr.BC = mat.cor[2,3]
-      break;
-  }
-  concordTotal = (Cor[0, 1] + Cor[1, 2] + Cor[0, 2]) / 3.0;
-
-}
-*/

@@ -389,6 +389,7 @@ void normal(boolean isOnline) {
           if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
         }
 
+        Serial << F("Arch ") << up << F(" ");
         Serial << F("Freq bins: ");
         // set the LEDs proportional to bins, normalized to maximum bin
         for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {

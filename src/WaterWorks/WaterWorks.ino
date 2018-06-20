@@ -88,11 +88,11 @@ void applyToHardware() {
 
 void setup() {
   // set them off, then enable pin.
-  digitalWrite(PIN_CANNON, LOW); pinMode(PIN_CANNON, OUTPUT);
-  digitalWrite(PIN_PUMP1, LOW); pinMode(PIN_PUMP1, OUTPUT);
-  digitalWrite(PIN_PUMP2, LOW); pinMode(PIN_PUMP2, OUTPUT);
-  digitalWrite(PIN_PUMP3, LOW); pinMode(PIN_PUMP3, OUTPUT);
-  digitalWrite(PIN_PUMP4, LOW); pinMode(PIN_PUMP4, OUTPUT);
+  digitalWrite(PIN_CANNON, OFF); pinMode(PIN_CANNON, OUTPUT);
+  digitalWrite(PIN_PUMP1, OFF); pinMode(PIN_PUMP1, OUTPUT);
+  digitalWrite(PIN_PUMP2, OFF); pinMode(PIN_PUMP2, OUTPUT);
+  digitalWrite(PIN_PUMP3, OFF); pinMode(PIN_PUMP3, OUTPUT);
+  digitalWrite(PIN_PUMP4, OFF); pinMode(PIN_PUMP4, OUTPUT);
 
   // for local output
   Serial.begin(115200);
