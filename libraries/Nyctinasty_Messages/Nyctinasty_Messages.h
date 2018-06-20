@@ -8,9 +8,11 @@ enum systemState {
 //	state		//	description
 	STARTUP=0,	//	all roles start here
 	
-	OFFLINE,	//	normal operation, but no messaging
-	ONLINE,		//	normal operation, but no messaging
-	SLAVED,		//	all activity dictated
+	LONELY,		// nobody is messing with the project; all quiet, or maybe an attractant.
+	OHAI,		// human walked through the sensors; 'sup, earthling!
+	GOODNUF,	// one human is doing something rhythmic; or two humans are messing around
+	GOODJOB,	// two humans are dosing something rhythmic; or three humans are messing around
+	WINNING, 	// three somebodies are crushing it
 
 	REBOOT,		//  trigger to reboot  
 	REPROGRAM,	//  trigger to contact the webserver to pull a new binary 
