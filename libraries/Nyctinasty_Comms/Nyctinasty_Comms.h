@@ -35,6 +35,7 @@ enum NyctRole {
 	WaterRoute,
 	WaterPumps1,
 	WaterPumps2,
+	Bridge,
   
 	N_ROLES
 };
@@ -47,7 +48,8 @@ const String NyctRoleString[] = {
 	"Sound",
 	"Water-Route",
 	"Water-Pumps1",
-	"Water-Pumps2"
+	"Water-Pumps2",
+	"Bridge"
 };
 
 // how many subscription topics should we malloc() for?

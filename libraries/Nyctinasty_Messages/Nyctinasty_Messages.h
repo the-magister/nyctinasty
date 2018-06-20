@@ -15,7 +15,6 @@ enum systemState {
 	WINNING, 	// three somebodies are crushing it
 
 	REBOOT,		//  trigger to reboot  
-	REPROGRAM,	//  trigger to contact the webserver to pull a new binary 
 
 	N_STATES	//	as a counter/max
 };
