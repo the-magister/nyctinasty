@@ -21,7 +21,7 @@
 // my role and arch number
 NyctRole myRole = N_ROLES; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
 // Arch0, Arch1, Arch2 for bootstrapping a new controller.
-byte myArch;
+byte myArch, leftArch, rightArch;
 
 // wire it up
 #define RX D1 // GPIO5
@@ -134,13 +134,23 @@ void setup() {
   comms.begin(myRole);
   myRole = comms.getRole();
   myArch = myRole - 1;
-
+  leftArch = myArch+1 >= N_ARCH ? 0 : myArch+1;
+  rightArch = myArch-1 >= N_ARCH ? (N_ARCH-1) : myArch-1;
+  Serial << F("Arch indexes: left=") << leftArch << F(" my=") << myArch << F(" right=") << rightArch << endl;
+  
   // subscribe
   comms.subscribe(&sC.settings, &sC.hasUpdate);
-  for ( byte i = 0; i < N_ARCH; i++ ) {
+  for ( byte a = 0; a < N_ARCH; a++ ) {
     // no need to subscribe to our own message
-    if ( i != myArch ) comms.subscribe(&sAF[i].freq, &sAF[i].hasUpdate, i);
+    if ( a != myArch ) comms.subscribe(&sAF[a].freq, &sAF[a].hasUpdate, a);
   }
+
+  Serial << F("DISTANCE_SAMPLING_RATE, ms: ") << DISTANCE_SAMPLING_RATE << endl;
+  Serial << F("DISTANCE_SAMPLING_FREQ, Hz: ") << DISTANCE_SAMPLING_FREQ << endl;
+  Serial << F("N_FREQ_SAMPLES, #: ") << N_FREQ_SAMPLES << endl;
+  Serial << F("FILL_TIME, ms: ") << FILL_TIME << endl;
+  Serial << F("Lowest Freq Bin, Hz: ") << (float)(0+1)*(float)DISTANCE_SAMPLING_FREQ/(float)N_FREQ_SAMPLES << endl;
+  Serial << F("Highest Freq Bin, Hz: ") << (float)(N_FREQ_BINS+1)*(float)DISTANCE_SAMPLING_FREQ/(float)N_FREQ_SAMPLES << endl;
 
   Serial << F("Startup complete.") << endl;
 }
@@ -148,6 +158,17 @@ void setup() {
 void loop() {
   // comms handling
   comms.update();
+
+/*
+  // after 5 seconds, transition to Offline, but we could easily get directed to Online before that.
+  static Metro cycleTimeout(5000UL);
+  if( cycleTimeout.check() ) {
+    sC.settings.state = (systemState)((int)sC.settings.state+1);
+    if( sC.settings.state == REBOOT ) sC.settings.state = STARTUP;
+    sC.hasUpdate = true;
+    cycleTimeout.reset();
+  }
+*/
 
   // check for settings update
   if ( sC.hasUpdate ) {
@@ -170,6 +191,7 @@ void switchState(systemState state) {
     case OHAI: stateMachine.transitionTo(Ohai); break;
     case GOODNUF: stateMachine.transitionTo(Goodnuf); break;
     case GOODJOB: stateMachine.transitionTo(Goodjob); break;
+    case WINNING: stateMachine.transitionTo(Winning); break;
     case REBOOT: stateMachine.transitionTo(Reboot); break;
     default:
       Serial << F("ERROR!  unknown state.") << endl;
@@ -195,7 +217,7 @@ void startup() {
 
   // after 5 seconds, transition to Offline, but we could easily get directed to Online before that.
   static Metro startupTimeout(5000UL);
-  if( startupTimeout.check() ) stateMachine.transitionTo(Lonely);
+  if( startupTimeout.check() ) stateMachine.transitionTo(Ohai);
 
 }
 
@@ -213,53 +235,144 @@ const TProgmemRGBPalette16 RetroC9_p FL_PROGMEM =
   C9_Blue,   C9_Blue,   C9_Blue,
   C9_White
 };
+// A cold, icy pale blue palette
+#define Ice_Blue1 0x0C1040
+#define Ice_Blue2 0x182080
+#define Ice_Blue3 0x5080C0
+const TProgmemRGBPalette16 Ice_p FL_PROGMEM =
+{
+  Ice_Blue1, Ice_Blue1, Ice_Blue1, Ice_Blue1,
+  Ice_Blue1, Ice_Blue1, Ice_Blue1, Ice_Blue1,
+  Ice_Blue1, Ice_Blue1, Ice_Blue1, Ice_Blue1,
+  Ice_Blue2, Ice_Blue2, Ice_Blue2, Ice_Blue3
+};
+
+CRGBPalette16 currentPalette;
 
 void lonely() {
+  // set palette
+  currentPalette = RetroC9_p;
+
+  // update tops
+  updateTops();
+  
+  // mirror tops to bottoms
+  leftDown = leftUp;
+  rightDown = rightUp;
+}
+
+void ohai() {
+  // set palette
+  currentPalette = LavaColors_p;
+
+  // update tops
+  updateTops();
+  
+  // update legs with sensor data
+  updateLegs();
+}
+
+void goodnuf() {
+  // set palette
+  currentPalette = CloudColors_p;
+
+  // update tops
+  updateTops();
+  
+  // update legs with sensor data
+  updateLegs();
+}
+
+void goodjob() {
+  // set palette
+  currentPalette = OceanColors_p;
+
+  // update tops
+  updateTops();
+  
+  // update legs with sensor data
+  updateLegs();
+}
+
+void winning() {
+  // set palette
+  currentPalette = PartyColors_p;
+
+  // update tops
+  updateTops();
+  
+  // update legs with sensor data
+  updateLegs();
+}
+
+void updateTops() {
   static byte colorIndex = 0;
   
   EVERY_N_MILLISECONDS( 10 ) {
     colorIndex ++;
     byte j = 0;
     for ( int i = 0; i < leftUp.size(); i++) {
-      leftUp[i] = ColorFromPalette( RetroC9_p, colorIndex + j++, 255, LINEARBLEND);
-      leftDown[i] = leftUp[i];
+      leftUp[i] = ColorFromPalette( currentPalette, colorIndex + j++, 255, LINEARBLEND );
     }
     for ( int i = 0; i < rightUp.size(); i++) {
-      rightUp[i] = ColorFromPalette( RetroC9_p, colorIndex + j++, 255, LINEARBLEND);
-      rightDown[i] = rightUp[i];
+      rightUp[i] = ColorFromPalette( currentPalette, colorIndex + j++, 255, LINEARBLEND );
     }
-  }
+  }  
 }
 
-void ohai() {
-  updateLegsandTops();
-}
+void updateLegs() {
+  // update lower lights 
 
-void goodnuf() {
-  updateLegsandTops();
-}
-
-void goodjob() {
-  updateLegsandTops();
-}
-
-void winning() {
-  updateLegsandTops();
-}
-
-void updateLegsandTops() {
-  
   // check for an update to frequency data
-  if ( sAF[0].hasUpdate || sAF[1].hasUpdate || sAF[2].hasUpdate ) {
-    // update lower lights by frequency data
-//      updateLegsByFrequency();
-//    updateLegsByPeakFreq();
+  if ( sAF[0].hasUpdate || sAF[1].hasUpdate || sAF[2].hasUpdate ) {  
     
-    // compute concordance
-//    getConcordance();
+    // fade lighting
+    const byte fadeEachUpdate = 128;
+    leftDown.fadeToBlackBy( fadeEachUpdate );
+    rightDown.fadeToBlackBy( fadeEachUpdate );
+//    leftDown.fill_solid(CRGB::Black);
+//    rightDown.fill_solid(CRGB::Black);
 
-    // show it
-//    updateTopsByConcordance();
+    double power[N_ARCH][N_FREQ_BINS] = {{0}};
+    double maxPower[N_ARCH] = {0};
+    double minPower[N_ARCH] = {1E9};
+    
+    for( byte a=0; a<N_ARCH; a++ ) {
+      // sum the power information across each sensor for each arch
+      for( byte b=0; b<N_FREQ_BINS; b++ ) {
+        for( byte s=0; s<N_SENSOR; s++ ) {
+          power[a][b] += sAF[a].freq.power[s][b];
+        }
+//        power[a][b] = log(power[a][b]+1E-5); // weigh the high frequency stuff more
+//        power[a][b] *= (b+1); // weigh the high frequency stuff more
+        if( power[a][b] > maxPower[a] ) maxPower[a] = power[a][b];
+        if( power[a][b] < minPower[a] ) minPower[a] = power[a][b];
+      }
+
+      // pick a color; my color is the brightest.
+      byte bright = 128;
+      if( a == myArch ) bright = 255;
+      
+      // normalize across the bins 
+      for( byte b=0; b<N_FREQ_BINS; b++ ) {
+        double br = mapd( power[a][b], minPower[a], maxPower[a], 0, bright );
+        CHSV color = CHSV(archHue[a], 255, (byte)br);
+        
+        // apply
+        if( a==myArch || a==leftArch ) leftDown[b] += color;
+        if( a==myArch || a==rightArch ) rightDown[b] += color;
+//        if( a==myArch ) leftDown[b] += color;
+//        if( a==myArch ) rightDown[b] += color;
+      }
+      /*
+      if( sAF[myArch].hasUpdate ) {
+        Serial << a << "\t";
+        Serial << minPower[a] << "\t";
+        Serial << maxPower[a] << "\t";
+        Serial << endl;
+      }
+      */
+    }
 
     // reset
     sAF[0].hasUpdate = sAF[1].hasUpdate = sAF[2].hasUpdate = false;
@@ -358,15 +471,15 @@ void updateBarByDistance() {
 
   // compute using a dummy set of LEDs
   static CRGBArray<N_SENSOR> bar;
-  for ( byte i = 0; i < N_SENSOR; i++ ) {
+  for ( byte s = 0; s < N_SENSOR; s++ ) {
     // quash noise
-    if ( dist.prox[i] < dist.noise ) dist.prox[i] = dist.min;
+    if ( dist.prox[s] < dist.noise ) dist.prox[s] = dist.min;
     uint16_t intensity = map(
-                           dist.prox[i],
+                           dist.prox[s],
                            dist.min, dist.max,
                            (uint16_t)0, (uint16_t)255
                          );
-    bar[i] = CHSV(archHue[myArch], archSat[myArch], (byte)intensity);
+    bar[s] = CHSV(archHue[myArch], archSat[myArch], (byte)intensity);
   }
 
   // assign to hardware. ugly and direct, but we can see what's going on.
@@ -389,22 +502,22 @@ void updateLegsByFrequency() {
   // do the boneheaded thing and sum up the bins across all sensors
   uint32_t sumSensors[N_FREQ_BINS] = {0};
   uint32_t maxSum = 0;
-  for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
-    for ( byte i = 0; i < N_SENSOR; i++ ) {
-      sumSensors[j] += sAF[myArch].freq.power[i][j];
+  for ( uint16_t b = 0; b < N_FREQ_BINS ; b++ ) {
+    for ( byte s = 0; s < N_SENSOR; s++ ) {
+      sumSensors[b] += sAF[myArch].freq.power[s][b];
     }
-    if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
+    if ( sumSensors[b] > maxSum ) maxSum = sumSensors[b];
   }
 
   Serial << F("Freq bins: ");
   // set the LEDs proportional to bins, normalized to maximum bin
-  for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
-    uint32_t value = map( sumSensors[j],
+  for ( uint16_t b = 0; b < N_FREQ_BINS ; b++ ) {
+    uint32_t value = map( sumSensors[b],
                           (uint32_t)0, maxSum,
                           (uint32_t)0, (uint32_t)255
                         );
     Serial << value << ",";
-    leftDown[j] = CHSV(archHue[myArch], archSat[myArch], brighten8_video(constrain(value, 0, 255)));
+    leftDown[b] = CHSV(archHue[myArch], archSat[myArch], brighten8_video(constrain(value, 0, 255)));
   }
   Serial << endl;
 
@@ -605,4 +718,6 @@ void PrintVector(double *vData, uint16_t bufferSize, uint8_t scaleType) {
   Serial.println();
 }
 
-
+double mapd(double x, double in_min, double in_max, double out_min, double out_max) {
+    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}

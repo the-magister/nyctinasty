@@ -28,11 +28,12 @@ NyctComms comms;
 
 // define a state for every systemState
 void startup(); State Startup = State(startup);
-void offline(); State Offline = State(offline);
-void online(); State Online = State(online);
-void slaved(); State Slaved = State(slaved);
+void lonely(); State Lonely = State(lonely);
+void ohai(); State Ohai = State(ohai);
+void goodnuf(); State Goodnuf = State(goodnuf);
+void goodjob(); State Goodjob = State(goodjob);
+void winning(); State Winning = State(winning);
 void reboot() { comms.reboot(); }; State Reboot = State(reboot);
-void reprogram() { comms.reprogram("Sepal_Arch.ino.bin"); }; State Reprogram = State(reprogram);
 FSM stateMachine = FSM(Startup); // initialize state machine
 
 // incoming message storage and flag for update
@@ -140,8 +141,7 @@ void loop() {
   if( sAF[0].hasUpdate && sAF[1].hasUpdate && sAF[2].hasUpdate ){
     uint32_t now = millis();
 
-    /*
-    // loop across each arch's information
+   // loop across each arch's information
     for( byte a=0; a<N_ARCH; a++ ) {
       // loop across each sensor
       for( byte s=0; s<N_SENSOR; s++ ) {
@@ -153,11 +153,12 @@ void loop() {
         }
         Serial << endl;
       }
-    }*/
+    }
+/*
     Serial << msg << sep << now;
     concordanceByPower();
     Serial << endl;
-    
+  */  
     sAF[0].hasUpdate = sAF[1].hasUpdate = sAF[2].hasUpdate = false;
   }
   // do stuff
@@ -168,11 +169,12 @@ void switchState(systemState state) {
   Serial << F("State.  Changing to ") << state << endl;
   switch ( state ) {
     case STARTUP: stateMachine.transitionTo(Startup); break;
-    case OFFLINE: stateMachine.transitionTo(Offline); break;
-    case ONLINE: stateMachine.transitionTo(Online); break;
-    case SLAVED: stateMachine.transitionTo(Slaved); break;
+    case LONELY: stateMachine.transitionTo(Lonely); break;
+    case OHAI: stateMachine.transitionTo(Ohai); break;
+    case GOODNUF: stateMachine.transitionTo(Goodnuf); break;
+    case GOODJOB: stateMachine.transitionTo(Goodjob); break;
+    case WINNING: stateMachine.transitionTo(Winning); break;
     case REBOOT: stateMachine.transitionTo(Reboot); break;
-    case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
     default:
       Serial << F("ERROR!  unknown state.") << endl;
   }
@@ -181,27 +183,13 @@ void switchState(systemState state) {
 void startup() {
    // after 5 seconds, transition to Offline, but we could easily get directed to Online before that.
   static Metro startupTimeout(5000UL);
-  if( startupTimeout.check() ) stateMachine.transitionTo(Offline);
+  if( startupTimeout.check() ) stateMachine.transitionTo(Ohai);
 }
- 
-void offline() {
-  if( comms.isConnected() ) {
-    Serial << F("GOOD.  online!") << endl;
-    stateMachine.transitionTo(Online);
-  } else {
-    normal(false);
-  }
-}
-
-void online() {
-  if( ! comms.isConnected() ) {
-    Serial << F("WARNING.  offline!") << endl;
-    stateMachine.transitionTo(Offline);
-  } else {
-    normal(true);
-  }
-
-}
+void lonely() {} 
+void ohai() {}
+void goodnuf() {}
+void goodjob() {}
+void winning() {}
 
 void normal(boolean isOnline) {
 
@@ -220,13 +208,17 @@ void normal(boolean isOnline) {
   }
 }
 
-double correlation(double (&x)[N_FREQ_BINS], double (&y)[N_FREQ_BINS]) {
+double correlation_fast(double (&x)[N_FREQ_BINS], double (&y)[N_FREQ_BINS]) {
   
   // sample size
   const double n = N_FREQ_BINS;
 
   // loop over bins
-  double sumXY, sumX, sumY, sumX2, sumY2 = 0;
+  double sumXY = 0;
+  double sumX = 0;
+  double sumY = 0;
+  double sumX2 = 0;
+  double sumY2 = 0;
   for( byte b=0; b<N_FREQ_BINS; b++ ) {
     sumXY += x[b]*y[b];
     sumX += x[b];
@@ -236,10 +228,61 @@ double correlation(double (&x)[N_FREQ_BINS], double (&y)[N_FREQ_BINS]) {
   }
 
   double n1 = n * sumXY;
+//  Serial << "n1 " << n1 << endl;
   double n2 = sumX * sumY;
+//  Serial << "n2 " << n2 << endl;
   double d1 = sqrt(n*sumX2 - sumX*sumX);
+//  Serial << "d1 " << d1 << endl;
   double d2 = sqrt(n*sumY2 - sumY*sumY);
+//  Serial << "d2 " << d2 << endl;
   return( (n1-n2)/d1/d2 );
+}
+
+double correlation_slow(double (&x)[N_FREQ_BINS], double (&y)[N_FREQ_BINS]) {
+  
+  // sample size
+  const double n = N_FREQ_BINS;
+  
+//  Serial << endl;
+  
+  // average
+  double xbar = 0;
+  double ybar = 0;
+  for( byte b=0; b<N_FREQ_BINS; b++ ) {
+//    Serial << x[b] << ", " << y[b] << endl;
+    xbar += x[b];
+    ybar += y[b];
+  }
+//  Serial << endl;
+  xbar /= n;
+//  Serial << "xbar " << xbar << endl;
+  ybar /= n;
+//  Serial << "ybar " << ybar << endl;
+
+  double num = 0;
+  double den1 = 0;
+  double den2 = 0;
+  for( byte b=0; b<N_FREQ_BINS; b++ ) {
+    double xdel = x[b]-xbar; 
+    double ydel = y[b]-ybar;
+    num += xdel*ydel;
+    den1 += pow(xdel, 2.0);
+    den2 += pow(ydel, 2.0);
+  }  
+//  Serial << "num " << num << endl;
+  
+//  Serial << "den1 " << den1 << endl;
+  den1 = sqrt(den1);
+//  Serial << "den1 " << den1 << endl;
+
+//  Serial << "den2 " << den2 << endl;
+  den2 = sqrt(den2);
+//  Serial << "den2 " << den2 << endl;
+
+  double ret = num / den1 / den2;
+//  Serial << "ret " << ret << endl;
+
+  return( ret );
 }
 
 void concordanceByPower() {
@@ -251,17 +294,26 @@ void concordanceByPower() {
       for( byte s=0; s<N_SENSOR; s++ ) {
         power[a][b] += sAF[a].freq.power[s][b];
       }
+//      Serial << power[a][b] << " ";
       power[a][b] = log(power[a][b]); // weight the high frequency stuff more
     }
+//    Serial << endl;
   }
   
   // compute
-  double corr01 = correlation(power[0], power[1]);
-  double corr12 = correlation(power[1], power[2]);
-  double corr20 = correlation(power[2], power[0]);
+  double corr01 = correlation_fast(power[0], power[1]); yield();
+  double corr12 = correlation_fast(power[1], power[2]); yield();
+  double corr20 = correlation_fast(power[2], power[0]); yield();
 
   char sep = ',';
   Serial << sep << corr01 << sep << corr12 << sep << corr20;
+/*
+  corr01 = correlation_slow(power[0], power[1]);
+  corr12 = correlation_slow(power[1], power[2]);
+  corr20 = correlation_slow(power[2], power[0]);
+
+  Serial << endl << corr01 << sep << corr12 << sep << corr20 << endl;
+*/
 }
 
 

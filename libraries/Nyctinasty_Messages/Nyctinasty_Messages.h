@@ -43,10 +43,10 @@ typedef struct {
 } SepalArchDistance;
 
 // FFT analysis of the distance data
-#define N_FREQ_SAMPLES (uint16_t)(1<<7)  // This value MUST ALWAYS be a power of 2
+#define N_FREQ_SAMPLES (uint16_t)(1<<8)  // This value MUST ALWAYS be a power of 2
 
 // time required for buffer fill
-#define FILL_TIME DISTANCE_SAMPLING_RATE*N_FREQ_SAMPLES // 1280 ms
+#define FILL_TIME DISTANCE_SAMPLING_RATE*N_FREQ_SAMPLES 
 
 // Nyquist limit; can't detect frequencies faster than this
 #define NYQUIST_LIMIT DISTANCE_SAMPLING_FREQ/2 // 50 Hz
