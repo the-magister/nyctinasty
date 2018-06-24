@@ -66,24 +66,13 @@ typedef struct {
 	float peakFreq[N_SENSOR]={0};
 } SepalArchFrequency;
 
-// water works control
-enum pumpState {
-	// pretty self-explanatory.  these are useful when a HIGH pin state means OFF.
-	OFF,		// 0==LOW
-	ON			// 1==HIGH
-};
-enum routeState {
-	FOUNTAIN,	// 0==LOW
-	CANNON		// 1==HIGH
+// cannon trigger
+enum triggerState {
+	TRIGGER_OFF,		// 0==LOW
+	TRIGGER_ON			// 1==HIGH
 };
 typedef struct {
-	// state of the four pumps; with default
-	// pump pair with priming, so one of these must be on first
-	pumpState primePump[2] = {OFF, OFF};
-	// pump pair without priming
-	pumpState boostPump[2] = {OFF, OFF};
-	// state of the output; with default
-	routeState route = {FOUNTAIN};
-} WaterWorks;
+	triggerState state = TRIGGER_OFF;
+} CannonTrigger;
 
 #endif

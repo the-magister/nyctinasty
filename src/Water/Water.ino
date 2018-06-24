@@ -13,34 +13,31 @@
 // my role and arch number
 NyctRole myRole = N_ROLES; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
 //NyctRole myRole = WaterRoute; 
-//NyctRole myRole = WaterPumps1; 
-//NyctRole myRole = WaterPumps2; 
+//NyctRole myRole = WaterPrime; 
+//NyctRole myRole = WaterBoost; 
 
 // wire it up
-// devices with the relay shield only have access to D1
-#define PIN_CANNON D1
 // devices with the light shield have access to D5-D8
-#define PIN_PUMP1 D5
-#define PIN_PUMP2 D6
-#define PIN_PUMP3 D7
-#define PIN_PUMP4 D8
+const byte pin[4] = {D5, D6, D7, D8};
 // also used
 // D4, GPIO2, BUILTIN_LED
+
+// current settings
+#define OFF LOW
+#define ON HIGH
+boolean pinState[4] = {OFF, OFF, OFF, OFF};
 
 // comms
 NyctComms comms;
 
 // define a state for every systemState
 void startup(); State Startup = State(startup);
-void offline(); State Offline = State(offline);
-void online(); State Online = State(online);
-void slaved(); State Slaved = State(slaved);
-void reboot() {
-  comms.reboot();
-}; State Reboot = State(reboot);
-void reprogram() {
-  comms.reprogram("Pumps.ino.bin");
-}; State Reprogram = State(reprogram);
+void lonely(); State Lonely = State(lonely);
+void ohai(); State Ohai = State(ohai);
+void goodnuf(); State Goodnuf = State(goodnuf);
+void goodjob(); State Goodjob = State(goodjob);
+void winning(); State Winning = State(winning);
+void reboot() { comms.reboot(); }; State Reboot = State(reboot);
 FSM stateMachine = FSM(Startup); // initialize state machine
 
 // incoming message storage and flag for update
@@ -48,51 +45,32 @@ struct sC_t {
   boolean hasUpdate = false;
   SystemCommand settings;
 } sC;
-struct pC_t {
+struct cT_t {
   boolean hasUpdate = false;
-  WaterWorks water;
-} pC;
+  CannonTrigger cannon;
+} cT;
 
 void applyToHardware() {
-  switch (myRole) {
-    case WaterRoute:
-      digitalWrite(PIN_CANNON, pC.water.route);
-      Serial << "Route: ";
-      Serial << (pC.water.route == FOUNTAIN ? "Fountain" : "Cannon") << endl;
-
-      break;
-
-    case WaterPumps1:
-      digitalWrite(PIN_PUMP1, pC.water.primePump[0]);
-      Serial << "(Prime) Pump 1: ";
-      Serial << (pC.water.primePump[0] == ON ? "ON" : "off") << endl;
-
-      digitalWrite(PIN_PUMP2, pC.water.primePump[1]);
-      Serial << "(Prime) Pump 2: ";
-      Serial << (pC.water.primePump[1] == ON ? "ON" : "off") << endl;
-
-      break;
-
-    case WaterPumps2:
-      digitalWrite(PIN_PUMP3, pC.water.boostPump[0]);
-      Serial << "(Boost) Pump 1: ";
-      Serial << (pC.water.boostPump[0] == ON ? "ON" : "off") << endl;
-
-      digitalWrite(PIN_PUMP4, pC.water.boostPump[1]);
-      Serial << "(Boost) Pump 2: ";
-      Serial << (pC.water.boostPump[1] == ON ? "ON" : "off") << endl;
-
-      break;
+  static boolean lastState[4] = {true};
+  boolean same = true;
+  for( byte i=0; i<4; i++ ) {
+    if( lastState[i] != pinState[i] ) same = false; 
   }
+  if( same ) return;
+  
+  Serial << "Settings. Pin";
+  for( byte i=0; i<4; i++ ) {
+    digitalWrite(pin[i], pinState[i]);
+    Serial << " " << i << "=" << pinState[i];
+    lastState[i] = pinState[i];
+  }
+  Serial << endl; 
 }
 
 void setup() {
   // set them off, then enable pin.
-  digitalWrite(PIN_CANNON, OFF); pinMode(PIN_CANNON, OUTPUT);
-  digitalWrite(PIN_PUMP1, OFF); pinMode(PIN_PUMP1, OUTPUT);
-  digitalWrite(PIN_PUMP2, OFF); pinMode(PIN_PUMP2, OUTPUT);
-  digitalWrite(PIN_PUMP3, OFF); pinMode(PIN_PUMP3, OUTPUT);
-  digitalWrite(PIN_PUMP4, OFF); pinMode(PIN_PUMP4, OUTPUT);
+  applyToHardware();
+  for( byte i=0; i<4; i++ ) pinMode(pin[i], OUTPUT);
 
   // for local output
   Serial.begin(115200);
@@ -104,10 +82,9 @@ void setup() {
 
   // subscribe
   comms.subscribe(&sC.settings, &sC.hasUpdate);
-  comms.subscribe(&pC.water, &pC.hasUpdate);
+  comms.subscribe(&cT.cannon, &cT.hasUpdate);
 
   Serial << F("Startup complete.") << endl;
-  Serial << F("'1','2','3' or '4' to toggle pumps.  'r' to toggle route.") << endl;
 }
 
 void loop() {
@@ -120,19 +97,28 @@ void loop() {
     sC.hasUpdate = false;
   }
 
+  // check for settings update
+  if ( cT.hasUpdate ) {
+    Serial << "Cannon. state=" << cT.cannon.state << endl;
+    cT.hasUpdate = false;
+  }
+
   // check for serial input
   if (Serial.available()) {
     char c = Serial.read();
     switch (c) {
-      case 'r': pC.water.route = (pC.water.route == CANNON) ? FOUNTAIN : CANNON; pC.hasUpdate = true; break;
-      case '1': pC.water.primePump[0] = (pC.water.primePump[0] == ON) ? OFF : ON; pC.hasUpdate = true; break;
-      case '2': pC.water.primePump[1] = (pC.water.primePump[1] == ON) ? OFF : ON; pC.hasUpdate = true; break;
-      case '3': pC.water.boostPump[0] = (pC.water.boostPump[0] == ON) ? OFF : ON; pC.hasUpdate = true; break;
-      case '4': pC.water.boostPump[1] = (pC.water.boostPump[1] == ON) ? OFF : ON; pC.hasUpdate = true; break;
+      case 's': sC.settings.state = STARTUP; sC.hasUpdate = true; break;
+      case 'l': sC.settings.state = LONELY; sC.hasUpdate = true; break;
+      case 'o': sC.settings.state = OHAI; sC.hasUpdate = true; break;
+      case 'n': sC.settings.state = GOODNUF; sC.hasUpdate = true; break;
+      case 'g': sC.settings.state = GOODJOB; sC.hasUpdate = true; break;
+      case 'w': sC.settings.state = WINNING; sC.hasUpdate = true; break;
+      case 'r': sC.settings.state = REBOOT; sC.hasUpdate = true; break;
+      case 't': cT.cannon.state = cT.cannon.state == TRIGGER_ON ? TRIGGER_OFF : TRIGGER_ON; cT.hasUpdate = true; break;
       case '\n': break;
       case '\r': break;
       default:
-        Serial << F("'1','2','3' or '4' to toggle pumps.  'r' to toggle route.") << endl;
+        Serial << F("(s)tartup, (l)onely, (o)hai, good(n)uf, (g)oodjob, (w)inning, (r)eboot, (t)rigger.") << endl;
         break;
     }
   }
@@ -145,11 +131,12 @@ void switchState(systemState state) {
   Serial << F("State.  Changing to ") << state << endl;
   switch ( state ) {
     case STARTUP: stateMachine.transitionTo(Startup); break;
-    case OFFLINE: stateMachine.transitionTo(Offline); break;
-    case ONLINE: stateMachine.transitionTo(Online); break;
-    case SLAVED: stateMachine.transitionTo(Slaved); break;
+    case LONELY: stateMachine.transitionTo(Lonely); break;
+    case OHAI: stateMachine.transitionTo(Ohai); break;
+    case GOODNUF: stateMachine.transitionTo(Goodnuf); break;
+    case GOODJOB: stateMachine.transitionTo(Goodjob); break;
+    case WINNING: stateMachine.transitionTo(Winning); break;
     case REBOOT: stateMachine.transitionTo(Reboot); break;
-    case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
     default:
       Serial << F("ERROR!  unknown state.") << endl;
   }
@@ -160,45 +147,96 @@ void startup() {
   applyToHardware();
 
   // transition to Offline, but we could easily get directed to Online before that.
-  stateMachine.transitionTo(Offline);
+  stateMachine.transitionTo(Lonely);
 
 }
+/*
+State      PrimePumps  BoostPumps   Route
+Lonely     0           0
+Ohai       1           0
+Goodnuf    1           1
+Goodjob    2           1
+Winning    2           2
+*/
 
-void offline() {
-  if ( comms.isConnected() ) {
-    Serial << F("GOOD.  online!") << endl;
-    stateMachine.transitionTo(Online);
-  } else {
-    normal(false);
+void lonely() {
+  switch (myRole) {
+    case WaterRoute:  pinState[0] = duty(0,1);  pinState[1] = ON;   break;
+    case WaterPrime:  pinState[0] = OFF;  pinState[1] = OFF;  break;
+    case WaterBoost:  pinState[0] = OFF;  pinState[1] = OFF;  break;
   }
+  applyToHardware();
+}
+void ohai() {
+  switch (myRole) {
+    case WaterRoute:  pinState[0] = duty(0,1);  pinState[1] = ON;   break;
+    case WaterPrime:  pinState[0] = ON;   pinState[1] = OFF;  break;
+    case WaterBoost:  pinState[0] = OFF;  pinState[1] = OFF;  break;
+  }
+  applyToHardware();
+}
+void goodnuf() {
+  switch (myRole) {
+    case WaterRoute:  pinState[0] = duty(3,7);  pinState[1] = OFF;  break;
+    case WaterPrime:  pinState[0] = ON;   pinState[1] = OFF;  break;
+    case WaterBoost:  pinState[0] = ON;   pinState[1] = OFF;  break;
+  }
+  applyToHardware();
+}
+void goodjob() {
+  switch (myRole) {
+    case WaterRoute:  pinState[0] = duty(3,2);  pinState[1] = OFF;  break;
+    case WaterPrime:  pinState[0] = ON;   pinState[1] = ON;  break;
+    case WaterBoost:  pinState[0] = ON;   pinState[1] = OFF;  break;
+  }
+  applyToHardware();
+}
+void winning() {
+  switch (myRole) {
+    case WaterRoute:  pinState[0] = duty(10,0);  pinState[1] = OFF;  break;
+    case WaterPrime:  pinState[0] = ON;   pinState[1] = ON;  break;
+    case WaterBoost:  pinState[0] = ON;   pinState[1] = ON;  break;
+  }
+  applyToHardware();
 }
 
-void online() {
-  if ( comms.isConnected() ) {
-    normal(true);
-  } else {
-    Serial << F("WARNING.  offline!") << endl;
-    // reset back to defaults
-    WaterWorks tmp;
-    pC.water = tmp;
-    pC.hasUpdate = true;
+boolean duty(uint32_t secOn, uint32_t secOff) {
+  static boolean state = false;
+  static Metro onTime(1000UL*secOn);
+  static Metro offTime(1000UL*secOff);
 
-    stateMachine.transitionTo(Offline);
+  // is the trigger squeezed?
+  boolean trigger = cT.cannon.state == TRIGGER_ON;
+  
+  if( !trigger || secOn==0 ) {
+    state = false;
+    return( state ); // that was easy
+  }
+  if( trigger && secOff==0 ) {
+    state = true;
+    return( state ); // that was easy
   }
   
-}
-
-void normal(boolean isOnline) {
-  // check for update
-  if ( pC.hasUpdate ) {
-    // and do it.
-    applyToHardware();
-    pC.hasUpdate = false;
+  byte lastOn, lastOff;
+  if( secOn != lastOn ) {
+    onTime.interval(secOn*1000UL);  
+    lastOn = secOn;
   }
-}
+  if( secOff != lastOff ) {
+    offTime.interval(secOff*1000UL);  
+    lastOff = secOff;
+  }
 
-void slaved() {
-  // NOP, currently.
-}
+  if( state && onTime.check() ) {
+    state = false;
+    offTime.reset();
+    Serial << millis() << " off" << endl;
+  } else if( !state && offTime.check() ){
+    state = true;
+    onTime.reset();
+    Serial << millis() << " on" << endl;
+  }
 
+  return( state );
+}
 

@@ -12,9 +12,10 @@
 #include "Nyctinasty_Comms.h"
 
 // spammy?
-#define SHOW_SERIAL_DEBUG true
+#define SHOW_FREQ_DEBUG true
+#define SHOW_COORD_DEBUG false
 
-// my role and arch number
+// My role and arch number
 NyctRole myRole = Coordinator; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
 
 // wire it up
@@ -141,24 +142,28 @@ void loop() {
   if( sAF[0].hasUpdate && sAF[1].hasUpdate && sAF[2].hasUpdate ){
     uint32_t now = millis();
 
-   // loop across each arch's information
-    for( byte a=0; a<N_ARCH; a++ ) {
-      // loop across each sensor
-      for( byte s=0; s<N_SENSOR; s++ ) {
-        Serial << msg << sep << now << sep << a << sep << s;
-        Serial << sep << sAF[a].freq.peakFreq[s];
-        Serial << sep << sAF[a].freq.avgPower[s];
-        for( byte b=0; b<N_FREQ_BINS; b++ ) {
-          Serial << sep << sAF[a].freq.power[s][b];
+    if( SHOW_FREQ_DEBUG ) {
+      // loop across each arch's information
+      for( byte a=0; a<N_ARCH; a++ ) {
+        // loop across each sensor
+        for( byte s=0; s<N_SENSOR; s++ ) {
+          Serial << msg << sep << now << sep << a << sep << s;
+          Serial << sep << sAF[a].freq.peakFreq[s];
+          Serial << sep << sAF[a].freq.avgPower[s];
+          for( byte b=0; b<N_FREQ_BINS; b++ ) {
+            Serial << sep << sAF[a].freq.power[s][b];
+          }
+          Serial << endl;
         }
-        Serial << endl;
       }
     }
-/*
-    Serial << msg << sep << now;
-    concordanceByPower();
-    Serial << endl;
-  */  
+    
+    if( SHOW_COORD_DEBUG ) {
+      Serial << msg << sep << now;
+      concordanceByPower();
+      Serial << endl;
+    }
+        
     sAF[0].hasUpdate = sAF[1].hasUpdate = sAF[2].hasUpdate = false;
   }
   // do stuff
@@ -289,6 +294,7 @@ void concordanceByPower() {
 
   // sum the power information across each sensor for each arch
   double power[N_ARCH][N_FREQ_BINS] = {{0}};
+  double avgPower[N_ARCH] = {0};
   for( byte a=0; a<N_ARCH; a++ ) {
     for( byte b=0; b<N_FREQ_BINS; b++ ) {
       for( byte s=0; s<N_SENSOR; s++ ) {
@@ -296,6 +302,9 @@ void concordanceByPower() {
       }
 //      Serial << power[a][b] << " ";
       power[a][b] = log(power[a][b]); // weight the high frequency stuff more
+    }
+    for( byte s=0; s<N_SENSOR; s++ ) {
+      avgPower[a] += sAF[a].freq.avgPower[s];
     }
 //    Serial << endl;
   }
@@ -305,8 +314,22 @@ void concordanceByPower() {
   double corr12 = correlation_fast(power[1], power[2]); yield();
   double corr20 = correlation_fast(power[2], power[0]); yield();
 
+  corr01 = pow(corr01, 2.0);
+  corr12 = pow(corr12, 2.0);
+  corr20 = pow(corr20, 2.0);
+  
   char sep = ',';
   Serial << sep << corr01 << sep << corr12 << sep << corr20;
+  Serial << sep << avgPower[0] << sep << avgPower[1] << sep << avgPower[2];
+
+  uint16_t thresh = 40000;
+  double thresh2 = 0.6;
+  if( avgPower[0]>thresh && avgPower[2]>thresh && corr20>0.6 ) {
+    Serial << sep << "C02";
+  } else {
+    Serial << sep << "c02";
+  }
+  
 /*
   corr01 = correlation_slow(power[0], power[1]);
   corr12 = correlation_slow(power[1], power[2]);

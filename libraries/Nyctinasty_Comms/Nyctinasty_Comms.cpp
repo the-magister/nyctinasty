@@ -68,7 +68,7 @@ const String settingsString = "nyc/Setting";
 const String distanceString = "nyc/Distance";
 const String frequencyString = "nyc/Frequency";
 const String simonString = "nyc/Fx/Simon";
-const String waterString = "nyc/Water";
+const String cannonString = "nyc/Cannon";
 const String sep = "/";
 void NyctComms::subscribe(SystemCommand *storage, boolean *trueWithUpdate) {
 	subscribe(
@@ -96,9 +96,9 @@ void NyctComms::subscribe(SepalArchFrequency *storage, boolean *trueWithUpdate, 
 		(void *)storage, trueWithUpdate, 0
 	);
 }
-void NyctComms::subscribe(WaterWorks *storage, boolean *trueWithUpdate) {
+void NyctComms::subscribe(CannonTrigger *storage, boolean *trueWithUpdate) {
 	subscribe(
-		waterString, 
+		cannonString, 
 		(void *)storage, trueWithUpdate, 1
 	);
 }
@@ -130,10 +130,10 @@ boolean NyctComms::publish(SepalArchFrequency *storage, uint8_t archNumber) {
 		(uint8_t *)storage, (unsigned int)sizeof(SepalArchFrequency)
 	);
 }
-boolean NyctComms::publish(WaterWorks *storage) {
+boolean NyctComms::publish(CannonTrigger *storage) {
 	return publish(
-		waterString, 
-		(uint8_t *)storage, (unsigned int)sizeof(WaterWorks)
+		cannonString, 
+		(uint8_t *)storage, (unsigned int)sizeof(CannonTrigger)
 	);
 }
 
