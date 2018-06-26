@@ -12,8 +12,22 @@
 #include "Nyctinasty_Comms.h"
 
 // spammy?
-#define SHOW_FREQ_DEBUG true
+#define SHOW_FREQ_DEBUG false
 #define SHOW_COORD_DEBUG false
+
+// Master settings:
+// don't allow wild oscillations in state transitions. See resetTransitionLockout()
+const uint32_t transitionLockoutTime = 3000UL;
+// threshold on avgPower for "yes, have a player".  See decidePlayerState()
+const double isPlayerThreshold[N_ARCH] = {6528, 6528, 6528};
+  // want the player states to be sticky, requiring (maxStateCount/2,maxStateCount) opposite readings before flipping.
+const byte maxStateCount = 10;
+// threshold on coordination for "yes, they're coordinated".  See decideCoordinationState()
+const double areCoordinatedThreshold[N_ARCH] = {0.5, 0.5, 0.5};
+  // want the coordination to be smoothed;
+const byte smoothing = 4;
+// if we "win", how long do we do stuff for?
+const uint32_t fanfareDuration = 10UL * 1000UL; // seconds
 
 // My role and arch number
 NyctRole myRole = Coordinator; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
@@ -28,20 +42,18 @@ NyctRole myRole = Coordinator; // see Nyctinasty_Comms.h; set N_ROLES to pull fr
 NyctComms comms;
 
 // define a state for every systemState
-void startup(); State Startup = State(startup);
-void lonely(); State Lonely = State(lonely);
-void ohai(); State Ohai = State(ohai);
-void goodnuf(); State Goodnuf = State(goodnuf);
-void goodjob(); State Goodjob = State(goodjob);
-void winning(); State Winning = State(winning);
+void startupEnter(), startupUpdate(); State Startup = State(startupEnter, startupUpdate, NULL);
+void lonelyUpdate(), lonelyEnter(); State Lonely = State(lonelyEnter, lonelyUpdate, NULL);
+void ohaiEnter(), ohaiUpdate(); State Ohai = State(ohaiEnter, ohaiUpdate, NULL);
+void goodnufEnter(), goodnufUpdate(); State Goodnuf = State(goodnufEnter, goodnufUpdate, NULL);
+void goodjobEnter(), goodjobUpdate(); State Goodjob = State(goodjobEnter, goodjobUpdate, NULL);
+void winningEnter(), winningUpdate(); State Winning = State(winningEnter, winningUpdate, NULL);
+void fanfareEnter(), fanfareUpdate(); State Fanfare = State(fanfareEnter, fanfareUpdate, NULL);
 void reboot() { comms.reboot(); }; State Reboot = State(reboot);
 FSM stateMachine = FSM(Startup); // initialize state machine
 
-// incoming message storage and flag for update
-struct sC_t {
-  boolean hasUpdate = false;
-  SystemCommand settings;
-} sC;
+// publish system state
+SystemCommand sC;
 
 // distance updates receive as this structure as this topic
 typedef struct {
@@ -57,28 +69,6 @@ typedef struct {
 } sAF_t;
 sAF_t sAF[N_ARCH];
 
-struct pC_t {
-  boolean hasUpdate = false;
-  WaterWorks water;
-} pC;
-
-// don't allow pump state switching too rapidly.
-const uint32_t pumpChangeInterval = 1000UL;
-byte targetPumpLevel = 0;
-
-/*
-Level PrimePumps  BoostPumps
-0     0           0
-1     1           0
-2     1           1
-3     2           1
-4     2           2
-*/
-
-/*
- * clockwise: Arch0, Cannon, Arch1, steps, Arch2, steps
- */
-
 void setup() {
   // for local output
   Serial.begin(115200);
@@ -90,8 +80,8 @@ void setup() {
   myRole = comms.getRole();
   
   // subscribe
-  comms.subscribe(&sC.settings, &sC.hasUpdate);
   for ( byte i = 0; i < N_ARCH; i++ ) {
+//    comms.subscribe(&sAD[i].dist, &sAD[i].hasUpdate, i);
     comms.subscribe(&sAF[i].freq, &sAF[i].hasUpdate, i);
   }
 
@@ -99,44 +89,247 @@ void setup() {
   randomSeed(analogRead(0));
 
   Serial << F("Startup complete.") << endl;
-  Serial << F("[0-4] to set pump level.  'r' to toggle route.") << endl;
 }
 
 void loop() {
-  // comms handling
-  comms.update();
-
-  // check for settings update
-  if ( sC.hasUpdate ) {
-    switchState(sC.settings.state);
-    sC.hasUpdate = false;
-  }
-/*
   // check for serial input
   if (Serial.available()) {
     char c = Serial.read();
     switch (c) {
-      case 'r': pC.water.route = (pC.water.route == CANNON) ? FOUNTAIN : CANNON; pC.hasUpdate = true; break;
-      case '0': targetPumpLevel = 0; break;
-      case '1': targetPumpLevel = 1; break;
-      case '2': targetPumpLevel = 2; break;
-      case '3': targetPumpLevel = 3; break;
-      case '4': targetPumpLevel = 4; break;
+      case 's': stateMachine.transitionTo(Startup); break;
+      case 'l': stateMachine.transitionTo(Lonely); break;
+      case 'o': stateMachine.transitionTo(Ohai); break;
+      case 'n': stateMachine.transitionTo(Goodnuf); break;
+      case 'g': stateMachine.transitionTo(Goodjob); break;
+      case 'w': stateMachine.transitionTo(Winning); break;
+      case 'r': stateMachine.transitionTo(Reboot); break;
       case '\n': break;
       case '\r': break;
       default:
-          Serial << F("[0-4] to set pump level.  'r' to toggle route.") << endl;
-
+        Serial << F("(s)tartup, (l)onely, (o)hai, good(n)uf, (g)oodjob, (w)inning, (r)eboot.") << endl;
         break;
     }
   }
-*/
+  
+  // comms handling
+  comms.update();
+
+  // do stuff, but only with an update
+  if( sAF[0].hasUpdate ) { 
+    decidePlayerState(0);
+    decideCoordination(0); // 0,1
+    decideCoordination(2); // 2,0
+
+    sAF[0].hasUpdate = false;
+    
+    stateMachine.update();
+  }
+  if( sAF[1].hasUpdate ) { 
+    decidePlayerState(1);
+    decideCoordination(0); // 0,1
+    decideCoordination(1); // 1,2
+
+    sAF[1].hasUpdate = false;
+    
+    stateMachine.update();
+  }
+  if( sAF[2].hasUpdate ) { 
+    decidePlayerState(2);
+    decideCoordination(2); // 2,0
+    decideCoordination(0); // 0,1
+    
+    sAF[2].hasUpdate = false;
+    
+    stateMachine.update();
+  }
+}
+
+
+/*
+ * Lonely    0 players
+ * Ohai      1 players
+ * Goodnuf   2 players
+ * Goodjob   3 players or 2 players coordinated
+ * Winning   3 players and 3 players coordinated
+ */
+
+// I enumerated these, as I can use symmetric ">=" and "<" below to get the logic right for transition counts
+const byte playerCount_Ohai = 1;
+const byte playerCount_Goodnuf = 2;
+const byte playerCount_Goodjob = 3;
+const byte playerCount_Winning = 3;
+const byte playerCount_Fanfare = 3;
+
+const byte coordCount_Ohai = 1;
+const byte coordCount_Goodnuf = 1;
+const byte coordCount_Goodjob = 1;
+const byte coordCount_Winning = 2;
+const byte coordCount_Fanfare = 3;
+
+// STARTUP state
+void startupEnter() { genericStateEnter(STARTUP); }
+void startupUpdate() {
+  if( transitionLockoutExpired() ) stateMachine.transitionTo(Lonely);
+}
+
+// LONELY state
+void lonelyEnter() { genericStateEnter(LONELY); }
+void lonelyUpdate() {
+  if( ! transitionLockoutExpired() ) return;
+
+  // no demotion possible
+
+  // promote 
+  if( ( totalPlayersGE(playerCount_Ohai) || coordPlayersGE(coordCount_Ohai) ) ) stateMachine.transitionTo(Ohai);
+} 
+
+// OHAI state
+void ohaiEnter() { genericStateEnter(OHAI); }
+void ohaiUpdate() {
+  if( ! transitionLockoutExpired() ) return;
+    
+  // demote 
+  if( ! ( totalPlayersGE(playerCount_Ohai) || coordPlayersGE(coordCount_Ohai) ) ) stateMachine.transitionTo(Lonely);
+
+  // promote 
+  if( ( totalPlayersGE(playerCount_Goodnuf) || coordPlayersGE(coordCount_Goodnuf) ) ) stateMachine.transitionTo(Goodnuf);
+}
+
+// GOODNUF state
+void goodnufEnter() { genericStateEnter(GOODNUF); }
+void goodnufUpdate() {
+  if( ! transitionLockoutExpired() ) return;
+ 
+  // demote 
+  if( ! ( totalPlayersGE(playerCount_Goodnuf) || coordPlayersGE(coordCount_Goodnuf) ) ) stateMachine.transitionTo(Ohai);
+
+  // promote 
+  if( ( totalPlayersGE(playerCount_Goodjob) || coordPlayersGE(coordCount_Goodjob) ) ) stateMachine.transitionTo(Goodjob);
+}
+
+// GOODJOB state
+void goodjobEnter() { genericStateEnter(GOODJOB); }
+void goodjobUpdate() {
+  if( ! transitionLockoutExpired() ) return;
+ 
+  // demote 
+  if( ! ( totalPlayersGE(playerCount_Goodjob) || coordPlayersGE(coordCount_Goodjob) ) ) stateMachine.transitionTo(Goodnuf);
+
+  // promote 
+  if( ( totalPlayersGE(playerCount_Winning) || coordPlayersGE(coordCount_Winning) ) ) stateMachine.transitionTo(Winning);
+}
+
+// WINNING state
+void winningEnter() { genericStateEnter(WINNING); }
+void winningUpdate() {
+  if( ! transitionLockoutExpired() ) return;
+ 
+  // demote 
+  if( ! ( totalPlayersGE(playerCount_Winning) || coordPlayersGE(coordCount_Winning) ) ) stateMachine.transitionTo(Goodjob);
+
+  // promote 
+  if( ( totalPlayersGE(playerCount_Fanfare) || coordPlayersGE(coordCount_Fanfare) ) ) stateMachine.transitionTo(Fanfare);
+}
+
+// FANFARE state
+Metro fanfareInterval(fanfareDuration);
+void fanfareEnter() { 
+  genericStateEnter(FANFARE); 
+  fanfareInterval.reset();
+}
+void fanfareUpdate() {
+  if( fanfareInterval.check() ) stateMachine.transitionTo(Lonely);
+}
+
+// algorithm for player detection
+double detectPlayer(byte arch) {
+  // compute mean
+  double meanAvgPower = 0;
+  for( byte s=0; s<N_SENSOR; s++ ) meanAvgPower += sAF[arch].freq.avgPower[s];
+  meanAvgPower /= (double)N_SENSOR;
+
+  return( meanAvgPower );
+}
+
+// watch the player state and also count the number of times in that same state (persistence)
+void decidePlayerState(byte arch) {  
+  // current, immediate value
+  boolean state = detectPlayer(arch) > isPlayerThreshold[arch];
+
+  // want the states to be sticky, requiring (maxCount/2,maxCount) opposite readings before flipping.
+  static byte count[N_ARCH] = {maxStateCount/2};
+  if( state == sC.isPlayer[arch] ) { 
+      count[arch] += count[arch]<maxStateCount ? 1 : 0;
+  } else { 
+      count[arch] -= count[arch]>0 ? 1 : 0;
+  } 
+
+  // if we've decremented to zero, time to swap states.
+  if( count[arch]==0 ) {
+    sC.isPlayer[arch] == state; 
+    count[arch] = maxStateCount/2;
+  }
+}
+
+// algorithm for coordination detection
+double isCoordinated(byte arch1, byte arch2) {
+
+  // if there aren't players in these arches, then they can't be coordinated.
+  if( sC.isPlayer[arch1]==false || sC.isPlayer[arch2]==false ) return(0.0);
+  
+  // I didn't say it was an awesome algorithm; watch this space.  
+  return( 1.0 );
+}
+
+void decideCoordination(byte pair) {
+  // current, immediate value
+  double coord = 0;
+  switch(pair) {
+    case 0: coord = isCoordinated(0,1); break;
+    case 1: coord = isCoordinated(1,2); break;
+    case 2: coord = isCoordinated(2,0); break;
+  }
+
+  // want coordination to be smoothed
+  static double smoothCoord[N_ARCH] = {0.0};
+  smoothCoord[pair] = ( smoothCoord[pair]*((double)smoothing-1) + coord )/((double)smoothing);
+
+  if( smoothCoord[pair] > areCoordinatedThreshold[pair] ) {
+    sC.areCoordinated[pair] = true;
+  } else {
+    sC.areCoordinated[pair] = false;
+  }
+}
+
+byte totalPlayersGE(byte th) { return( (sC.isPlayer[0]+sC.isPlayer[1]+sC.isPlayer[2]) >= th ); }
+byte coordPlayersGE(byte th) { return( (sC.areCoordinated[0]+sC.areCoordinated[1]+sC.areCoordinated[2]) >= th ); }
+
+// don't allow wild oscillations in state transitions
+uint32_t nextTransitionAllowedAt;
+void resetTransitionLockout() { nextTransitionAllowedAt = millis() + transitionLockoutTime; }
+boolean transitionLockoutExpired() { return( millis() > nextTransitionAllowedAt ); }
+
+void genericStateEnter(systemState state) {
+  resetTransitionLockout();
+  
+  sC.state = state;
+  
+  comms.publish(&sC);    
+}
+
+
+
+
+
+
+
+ /*
   static String msg = "NOP";
   if (Serial.available()) {
     delay(100);
     msg = Serial.readString();
   }
-  
+
   const char sep = ',';
   // loop across each arch's information
   if( sAF[0].hasUpdate && sAF[1].hasUpdate && sAF[2].hasUpdate ){
@@ -160,58 +353,14 @@ void loop() {
     
     if( SHOW_COORD_DEBUG ) {
       Serial << msg << sep << now;
-      concordanceByPower();
+//      concordanceByPower();
       Serial << endl;
     }
         
     sAF[0].hasUpdate = sAF[1].hasUpdate = sAF[2].hasUpdate = false;
   }
-  // do stuff
-  stateMachine.update();
-}
-
-void switchState(systemState state) {
-  Serial << F("State.  Changing to ") << state << endl;
-  switch ( state ) {
-    case STARTUP: stateMachine.transitionTo(Startup); break;
-    case LONELY: stateMachine.transitionTo(Lonely); break;
-    case OHAI: stateMachine.transitionTo(Ohai); break;
-    case GOODNUF: stateMachine.transitionTo(Goodnuf); break;
-    case GOODJOB: stateMachine.transitionTo(Goodjob); break;
-    case WINNING: stateMachine.transitionTo(Winning); break;
-    case REBOOT: stateMachine.transitionTo(Reboot); break;
-    default:
-      Serial << F("ERROR!  unknown state.") << endl;
-  }
-}
-
-void startup() {
-   // after 5 seconds, transition to Offline, but we could easily get directed to Online before that.
-  static Metro startupTimeout(5000UL);
-  if( startupTimeout.check() ) stateMachine.transitionTo(Ohai);
-}
-void lonely() {} 
-void ohai() {}
-void goodnuf() {}
-void goodjob() {}
-void winning() {}
-
-void normal(boolean isOnline) {
-
-  // queue up changes for online
-  if( ! isOnline ) return;
-  
-  static Metro pumpChange(pumpChangeInterval);
-  if( getPumpLevel() != targetPumpLevel ) {
-    if( pumpChange.check() ) {
-      
-      changePumpLevel(); // update
-      comms.publish(&pC.water); // push it
-      
-      pumpChange.reset();
-    }
-  }
-}
+  */
+    
 
 double correlation_fast(double (&x)[N_FREQ_BINS], double (&y)[N_FREQ_BINS]) {
   
@@ -425,101 +574,5 @@ void getConcordance() {
 }
 */
 
-byte getPumpLevel() {
-  byte ret = 0;
-  for( byte p=0; p<2; p++ ) ret += (pC.water.primePump[p] == ON) + (pC.water.boostPump[p] == ON);
-  return( ret );
-}
-
-void changePumpLevel() {
-  byte currentPumpLevel = getPumpLevel();
-  
-  Serial << "Pump level: " << currentPumpLevel << " -> " << targetPumpLevel << endl;
-  
-  if( currentPumpLevel < targetPumpLevel ) {
-    switch( currentPumpLevel ) {
-      case 0: addPrimePump(); break;
-      case 1: addBoostPump(); break;
-      case 2: addPrimePump(); break;
-      case 3: addBoostPump(); break;
-    }
-  } else {
-    switch( currentPumpLevel ) {
-      case 1: subPrimePump(); break;
-      case 2: subBoostPump(); break;
-      case 3: subPrimePump(); break;
-      case 4: subBoostPump(); break;
-    }
-  }
-
-  Serial << "\tRoute: ";
-  Serial << (pC.water.route == FOUNTAIN ? "Fountain" : "Cannon") << endl;
-  Serial << "\tPrime 1: ";
-  Serial << (pC.water.primePump[0] == ON ? "ON" : "off") << endl;
-  Serial << "\tPrime 2: ";
-  Serial << (pC.water.primePump[1] == ON ? "ON" : "off") << endl;
-  Serial << "\tBoost 1: ";
-  Serial << (pC.water.boostPump[0] == ON ? "ON" : "off") << endl;
-  Serial << "\tBoost 2: ";
-  Serial << (pC.water.boostPump[1] == ON ? "ON" : "off") << endl;
-
-}
-
-// start with random value
-static byte nextBoostPump = random(2); 
-// start with random value
-static byte nextPrimePump = random(2); 
-
-void addBoostPump() {
-  // odd case but
-  if( pC.water.boostPump[0] == ON && pC.water.boostPump[1] == ON ) return;
-
-  // set next in line on
-  pC.water.boostPump[nextBoostPump] = ON;
-
-  // roll to next
-  nextBoostPump = !nextBoostPump;
-}
-void addPrimePump() {
-  // odd case but
-  if( pC.water.primePump[0] == ON && pC.water.primePump[1] == ON ) return;
-
-  // set next in line on
-  pC.water.primePump[nextPrimePump] = ON;
-
-  // roll to next
-  nextPrimePump = !nextPrimePump;
-}
-
-void subBoostPump() {
-  // odd case but
-  if( pC.water.boostPump[0] == OFF && pC.water.boostPump[1] == OFF ) return;
-
-  // might need to toggle the same one
-  if( (pC.water.boostPump[0] == ON) + (pC.water.boostPump[1] == ON) == 1 ) nextBoostPump != nextBoostPump;
-  
-  // set next in line on
-  pC.water.boostPump[nextBoostPump] = OFF;
-
-  // roll to next
-  nextBoostPump = !nextBoostPump;
-}
-void subPrimePump() {
-  // odd case but
-  if( pC.water.primePump[0] == OFF && pC.water.primePump[1] == OFF ) return;
-
-  // might need to toggle the same one
-  if( (pC.water.primePump[0] == ON) + (pC.water.primePump[1] == ON) == 1 ) nextPrimePump != nextPrimePump;
-  
-  // set next in line on
-  pC.water.primePump[nextPrimePump] = OFF;
-
-  // roll to next
-  nextPrimePump = !nextPrimePump;
-}
-
-void slaved() {
-  // NOP, currently.  Will look for lighting directions, either through UDP (direct) or MQTT (procedural).
-}
 
 

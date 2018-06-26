@@ -240,3 +240,100 @@ boolean duty(uint32_t secOn, uint32_t secOff) {
   return( state );
 }
 
+
+/*
+ 
+byte getPumpLevel() {
+  byte ret = 0;
+  for( byte p=0; p<2; p++ ) ret += (pC.water.primePump[p] == ON) + (pC.water.boostPump[p] == ON);
+  return( ret );
+}
+
+void changePumpLevel() {
+  byte currentPumpLevel = getPumpLevel();
+  
+  Serial << "Pump level: " << currentPumpLevel << " -> " << targetPumpLevel << endl;
+  
+  if( currentPumpLevel < targetPumpLevel ) {
+    switch( currentPumpLevel ) {
+      case 0: addPrimePump(); break;
+      case 1: addBoostPump(); break;
+      case 2: addPrimePump(); break;
+      case 3: addBoostPump(); break;
+    }
+  } else {
+    switch( currentPumpLevel ) {
+      case 1: subPrimePump(); break;
+      case 2: subBoostPump(); break;
+      case 3: subPrimePump(); break;
+      case 4: subBoostPump(); break;
+    }
+  }
+
+  Serial << "\tRoute: ";
+  Serial << (pC.water.route == FOUNTAIN ? "Fountain" : "Cannon") << endl;
+  Serial << "\tPrime 1: ";
+  Serial << (pC.water.primePump[0] == ON ? "ON" : "off") << endl;
+  Serial << "\tPrime 2: ";
+  Serial << (pC.water.primePump[1] == ON ? "ON" : "off") << endl;
+  Serial << "\tBoost 1: ";
+  Serial << (pC.water.boostPump[0] == ON ? "ON" : "off") << endl;
+  Serial << "\tBoost 2: ";
+  Serial << (pC.water.boostPump[1] == ON ? "ON" : "off") << endl;
+
+}
+
+// start with random value
+static byte nextBoostPump = random(2); 
+// start with random value
+static byte nextPrimePump = random(2); 
+
+void addBoostPump() {
+  // odd case but
+  if( pC.water.boostPump[0] == ON && pC.water.boostPump[1] == ON ) return;
+
+  // set next in line on
+  pC.water.boostPump[nextBoostPump] = ON;
+
+  // roll to next
+  nextBoostPump = !nextBoostPump;
+}
+void addPrimePump() {
+  // odd case but
+  if( pC.water.primePump[0] == ON && pC.water.primePump[1] == ON ) return;
+
+  // set next in line on
+  pC.water.primePump[nextPrimePump] = ON;
+
+  // roll to next
+  nextPrimePump = !nextPrimePump;
+}
+
+void subBoostPump() {
+  // odd case but
+  if( pC.water.boostPump[0] == OFF && pC.water.boostPump[1] == OFF ) return;
+
+  // might need to toggle the same one
+  if( (pC.water.boostPump[0] == ON) + (pC.water.boostPump[1] == ON) == 1 ) nextBoostPump != nextBoostPump;
+  
+  // set next in line on
+  pC.water.boostPump[nextBoostPump] = OFF;
+
+  // roll to next
+  nextBoostPump = !nextBoostPump;
+}
+void subPrimePump() {
+  // odd case but
+  if( pC.water.primePump[0] == OFF && pC.water.primePump[1] == OFF ) return;
+
+  // might need to toggle the same one
+  if( (pC.water.primePump[0] == ON) + (pC.water.primePump[1] == ON) == 1 ) nextPrimePump != nextPrimePump;
+  
+  // set next in line on
+  pC.water.primePump[nextPrimePump] = OFF;
+
+  // roll to next
+  nextPrimePump = !nextPrimePump;
+}
+
+*/

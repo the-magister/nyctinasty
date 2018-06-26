@@ -2,30 +2,32 @@
 #define Nyctinasty_Messages_h
 
 #include <Arduino.h>
+	
+// number of Arches per Sepal
+#define N_ARCH 3
 
 // system states. probably want to implement a FSM on each uC to work with these.
 enum systemState {
 //	state		//	description
 	STARTUP=0,	//	all roles start here
 	
-	LONELY,		// nobody is messing with the project; all quiet, or maybe an attractant.
-	OHAI,		// human walked through the sensors; 'sup, earthling!
-	GOODNUF,	// one human is doing something rhythmic; or two humans are messing around
-	GOODJOB,	// two humans are dosing something rhythmic; or three humans are messing around
-	WINNING, 	// three somebodies are crushing it
-
-	REBOOT,		//  trigger to reboot  
-
+	LONELY,		// 0 players
+	OHAI,		// 1 players
+	GOODNUF,	// 2 players
+	GOODJOB,	// 3 players or 2 players coordinated
+	WINNING, 	// 3 players and 2 players coordinated
+	FANFARE,	// 3 players and 3 players coordinated 
+	
+	REBOOT,		//  trigger to reboot 
 	N_STATES	//	as a counter/max
 };
 
 // command structure
 typedef struct {
 	systemState state={STARTUP}; 
+	boolean isPlayer[N_ARCH] = {false}; // A0, A1, A2
+	boolean areCoordinated[N_ARCH] = {false}; // A0:A1, A1:A2, A2:A0
 } SystemCommand;
-	
-// number of Arches per Sepal
-#define N_ARCH 3
 
 // number of distance Sensors per Arch
 #define N_SENSOR 6
