@@ -15,19 +15,25 @@
 #define SHOW_FREQ_DEBUG false
 #define SHOW_COORD_DEBUG false
 
+// ##################
 // Master settings:
+
 // don't allow wild oscillations in state transitions. See resetTransitionLockout()
 const uint32_t transitionLockoutTime = 3000UL;
-// threshold on avgPower for "yes, have a player".  See decidePlayerState()
-const double isPlayerThreshold[N_ARCH] = {6528, 6528, 6528};
-  // want the player states to be sticky, requiring (maxStateCount/2,maxStateCount) opposite readings before flipping.
-const byte maxStateCount = 10;
+
+// fold-increase from basal sensor readings for "yes, have a player".  
+// See decidePlayerState()
+const double isPlayerThreshold[N_ARCH] = {1.5, 1.5, 1.5};
+
 // threshold on coordination for "yes, they're coordinated".  See decideCoordinationState()
-const double areCoordinatedThreshold[N_ARCH] = {0.5, 0.5, 0.5};
-  // want the coordination to be smoothed;
-const byte smoothing = 4;
+const double areCoordinatedThreshold[N_ARCH] = {0.9, 0.9, 0.9};
+  // want the coordination to be smoothed;  See decideCoordination()
+  const byte smoothing = 4;
+
 // if we "win", how long do we do stuff for?
 const uint32_t fanfareDuration = 10UL * 1000UL; // seconds
+
+// ##################
 
 // My role and arch number
 NyctRole myRole = Coordinator; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
@@ -102,27 +108,27 @@ void loop() {
       case 'n': stateMachine.transitionTo(Goodnuf); break;
       case 'g': stateMachine.transitionTo(Goodjob); break;
       case 'w': stateMachine.transitionTo(Winning); break;
+      case 'f': stateMachine.transitionTo(Fanfare); break;
       case 'r': stateMachine.transitionTo(Reboot); break;
       case '\n': break;
       case '\r': break;
       default:
-        Serial << F("(s)tartup, (l)onely, (o)hai, good(n)uf, (g)oodjob, (w)inning, (r)eboot.") << endl;
+        Serial << F("(s)tartup, (l)onely, (o)hai, good(n)uf, (g)oodjob, (w)inning, (f)anfare, (r)eboot.") << endl;
         break;
     }
+    stateMachine.update();
   }
   
   // comms handling
   comms.update();
 
-  // do stuff, but only with an update
+  // do stuff
   if( sAF[0].hasUpdate ) { 
     decidePlayerState(0);
     decideCoordination(0); // 0,1
     decideCoordination(2); // 2,0
 
     sAF[0].hasUpdate = false;
-    
-    stateMachine.update();
   }
   if( sAF[1].hasUpdate ) { 
     decidePlayerState(1);
@@ -130,18 +136,17 @@ void loop() {
     decideCoordination(1); // 1,2
 
     sAF[1].hasUpdate = false;
-    
-    stateMachine.update();
   }
   if( sAF[2].hasUpdate ) { 
     decidePlayerState(2);
     decideCoordination(2); // 2,0
     decideCoordination(0); // 0,1
     
-    sAF[2].hasUpdate = false;
-    
-    stateMachine.update();
+    sAF[2].hasUpdate = false;    
   }
+
+  // state machine
+  stateMachine.update();
 }
 
 
@@ -253,9 +258,28 @@ double detectPlayer(byte arch) {
 
 // watch the player state and also count the number of times in that same state (persistence)
 void decidePlayerState(byte arch) {  
-  // current, immediate value
-  boolean state = detectPlayer(arch) > isPlayerThreshold[arch];
+  static double smoothedPower[N_ARCH] = {6528,6528,6528};
+  // should be 6528.
+  const double s = 10;
 
+  // current, immediate value
+  double power = detectPlayer(arch);
+  
+  boolean state = detectPlayer(arch) > smoothedPower[arch]*isPlayerThreshold[arch];
+  if( state != sC.isPlayer[arch] ) {
+    sC.isPlayer[arch] = state;
+    Serial << "decidePlayerState.  isPlayer? A" << arch << "=" << state << endl;
+  }
+  
+  if( !sC.isPlayer[arch] ) {
+    smoothedPower[arch] = (smoothedPower[arch]*(s-1.0) + power)/s;
+//    Serial << "decidePlayerState.  smoothed power? A0=" << smoothedPower[0];
+//    Serial << " A1=" << smoothedPower[1];
+//    Serial << " A2=" << smoothedPower[2] << endl;    
+  }
+
+
+  /*
   // want the states to be sticky, requiring (maxCount/2,maxCount) opposite readings before flipping.
   static byte count[N_ARCH] = {maxStateCount/2};
   if( state == sC.isPlayer[arch] ) { 
@@ -266,9 +290,14 @@ void decidePlayerState(byte arch) {
 
   // if we've decremented to zero, time to swap states.
   if( count[arch]==0 ) {
-    sC.isPlayer[arch] == state; 
+    Serial << "isPlayer.  Arch=" << arch << " isPlayer=" << state << endl;
+    sC.isPlayer[arch] = state; 
     count[arch] = maxStateCount/2;
   }
+
+//  if( arch==2 ) Serial << "count=" << count[arch] << " state=" << state << " isPlayer=" << sC.isPlayer[arch] << endl;
+*/
+  
 }
 
 // algorithm for coordination detection
@@ -294,6 +323,9 @@ void decideCoordination(byte pair) {
   static double smoothCoord[N_ARCH] = {0.0};
   smoothCoord[pair] = ( smoothCoord[pair]*((double)smoothing-1) + coord )/((double)smoothing);
 
+//  if( smoothCoord[pair] > 0 ) {
+//    Serial << "decideCoordination. P" << pair << "=" << smoothCoord[pair] << endl;
+//  }
   if( smoothCoord[pair] > areCoordinatedThreshold[pair] ) {
     sC.areCoordinated[pair] = true;
   } else {
@@ -315,6 +347,27 @@ void genericStateEnter(systemState state) {
   sC.state = state;
   
   comms.publish(&sC);    
+
+  Serial << F("State change. to=");
+  switch(state) {
+    case STARTUP: Serial << "STARTUP"; break;  //  all roles start here
+  
+    case LONELY: Serial << "LONELY"; break;   // 0 players
+    case OHAI: Serial << "OHAI"; break;   // 1 players
+    case GOODNUF: Serial << "GOODNUF"; break;  // 2 players
+    case GOODJOB: Serial << "GOODJOB"; break;  // 3 players or 2 players coordinated
+    case WINNING: Serial << "WINNING"; break;  // 3 players and 2 players coordinated
+    case FANFARE: Serial << "FANFARE"; break;  // 3 players and 3 players coordinated 
+  
+    case REBOOT: Serial << "REBOOT"; break;   //  trigger to reboot 
+  }
+  Serial << ". isPlayer? A0=" << sC.isPlayer[0];
+  Serial << " A1=" << sC.isPlayer[1];
+  Serial << " A2=" << sC.isPlayer[2];
+  Serial << ". coord? A01=" << sC.areCoordinated[0];
+  Serial << " A12=" << sC.areCoordinated[1];
+  Serial << " A20=" << sC.areCoordinated[2];
+  Serial << endl;
 }
 
 

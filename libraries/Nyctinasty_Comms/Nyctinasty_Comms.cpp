@@ -159,7 +159,12 @@ void NyctComms::reboot() {
 
 	Serial << endl << F("*** REBOOTING ***") << endl;
 	delay(100);
+	
 	ESP.restart();
+	
+	// If you've traced an issue to here b/c reboot doesn't work... it actually does.
+	// You must power cycle (not reset button!) the ESP after a code upload before
+	// ESP.restart() will work correctly.
 }
 void NyctComms::reprogram(String binaryName) {
 	setOnLED();

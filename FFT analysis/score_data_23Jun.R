@@ -327,15 +327,26 @@ coord = keep %>%
 #						browser()
 
 						# this is the best so far.
-						m = df %>%
-							select( - peakFreq, - avgPower ) %>% 
-							spread(Arch, Power)
-		
-						data.frame(
-							pC01=cor(m$A0, m$A1),
-							pC12=cor(m$A1, m$A2),
-							pC20=cor(m$A2, m$A0)
-						) %>% return							
+						m = df %>% 
+							group_by(Arch, Bin) %>% 
+							summarise(Power=mean(Power)) %>% 
+							spread(Arch, Power) #%>%
+						#	slice(2:n()) # drop bin 1?
+						
+						foo = cov.wt(m%>%select(-Bin), wt=m$Bin, cor=T)
+						
+						return( data.frame(
+							pC01=foo$cor[1,2],
+							pC12=foo$cor[2,3],
+							pC20=foo$cor[1,3]
+						))
+						
+						m %>% summarise(
+							pC01=which.max(A0)-which.max(A1),
+							pC12=which.max(A1)-which.max(A2),
+							pC20=which.max(A2)-which.max(A0)
+						) %>% return
+						
 					})
 				) %>%
 				unnest( correl, .drop=T )
@@ -345,10 +356,16 @@ pwr = coord %>%
 	unnest(pwr, .drop=T) %>%
 	mutate(
 		# again, we can ignore cases where we don't have a player
-		pC01 = ifelse(P0&P1, pC01, F),
-		pC12 = ifelse(P1&P2, pC12, F),
-		pC20 = ifelse(P2&P0, pC20, F)
+		pC01 = ifelse(P0&P1, pC01, NA),
+		pC12 = ifelse(P1&P2, pC12, NA),
+		pC20 = ifelse(P2&P0, pC20, NA)
 	) %T>% print
+qplot(Time, pC01, color=C01, data=pwr, geom="line") +
+	scale_color_colorblind() + geom_point() +
+	facet_wrap(~Notes, scales="free_x") 
+last_plot() + aes(y=pC12, color=C12)
+last_plot() + aes(y=pC20, color=C20)
+	
 qplot(Time, as.numeric(C01), data=pwr, geom="point") +
 	geom_line(aes(y=pC01)) +
 	facet_wrap(~Notes, scales="free_x") +
