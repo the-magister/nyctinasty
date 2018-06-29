@@ -19,7 +19,7 @@
 // Master settings:
 
 // don't allow wild oscillations in state transitions. See resetTransitionLockout()
-const uint32_t transitionLockoutTime = 3000UL;
+const uint32_t transitionLockoutTime = 6000UL;
 
 // fold-increase from basal sensor readings for "yes, have a player".  
 // See decidePlayerState()

@@ -34,9 +34,40 @@ NyctComms comms;
 
 // define a state for every systemState
 void startup(); State Startup = State(startup);
-void offline(); State Offline = State(offline);
-void online(); State Online = State(online);
-void slaved(); State Slaved = State(slaved);
+//void offline(); State Offline = State(offline);
+//void online(); State Online = State(online);
+//void slaved(); State Slaved = State(slaved);
+
+// Gameplay states
+void lonelyEnter(); void lonely(); void lonelyExit(); State Lonely = State(lonelyEnter,lonely,lonelyExit);
+void ohaiEnter(); void ohaiExit(); State Ohai = State(ohaiEnter,NULL,ohaiExit);
+void goodnuf();  State Goodnuf = State(goodnuf);
+void goodjob();  State Goodjob = State(goodjob);
+void winning();  State Winning = State(winning);
+void fanfare(); State Fanfare = State(fanfare);
+
+// Sounds
+#define LONELY_START 100
+#define OHAI_START 200
+#define GOODNUF_START 400
+#define GOODJOB_START 500
+#define WINNING_START 600
+#define FANFARE_START 300
+
+#define LONELY_NUM 8
+#define OHAI_NUM 4
+#define GOODNUF_NUM 1
+#define GOODJOB_NUM 1
+#define WINNING_NUM 1
+#define FANFARE_NUM 4
+
+#define LONELY_PLAY_SPACING 20000l
+
+Metro lonelyTimer(1UL);
+Metro ohaiLockoutTimer(1UL);
+
+
+
 void reboot() {
   comms.reboot();
 }; State Reboot = State(reboot);
@@ -75,6 +106,8 @@ const int BOOTS = 17;
 const int SPARKLE = 18;
 const int CATS = 19;
 
+long lastActivity = 0;  // Last time we detected movement
+
 void setup() {
   // for local output
   Serial.begin(115200);
@@ -107,17 +140,25 @@ void setup() {
   // subscribe
   comms.subscribe(&sC.settings, &sC.hasUpdate);
   for ( byte i = 0; i < N_ARCH; i++ ) {
+    Serial.printf("Subscribe to arch: %d\n",i);
     // subscribe to frequency and distance messages
     comms.subscribe(&sAF[i].freq, &sAF[i].hasUpdate, i);
     comms.subscribe(&sAD[i].dist, &sAD[i].hasUpdate, i);
   }
 
-  Serial << F("Startup complete.") << endl;
+  Serial << F("Setup complete. Wait for subscriptions") << endl;
+/*
+  long start = millis();
+  while(millis() - start < 5000) {
+    delay(10);
+    comms.update();
+  }
+*/
+  Serial << "Done with Setup" << endl;
+  // Allow time for subscriptions to land
+  //delay(5000);  // Not sure if this is really necessary but we dont always connect 
 
-  // Allow time for the Tsunami to respond with the version string and
-  //  number of tracks.
-  delay(100);
-
+/*
   // run through some calculations to explain what's in the SepalArchFrequency data item.
   Serial << F("Actual frequencies in each power bin:") << endl;
   for(byte j=0; j<N_FREQ_BINS; j++) {
@@ -125,12 +166,14 @@ void setup() {
     Serial << F("\tFreq=") << ((float)j+1.0)*(float)DISTANCE_SAMPLING_FREQ/(float)N_FREQ_SAMPLES;
     Serial << endl;
   }
-
+*/
 }
 
 void loop() {
   // comms handling
   comms.update();
+  tsunami.update();
+
 
   // check for settings update
   if ( sC.hasUpdate ) {
@@ -140,290 +183,432 @@ void loop() {
 
   // do stuff
   stateMachine.update();
+
+  //mimicController();  // Uncomment to mimic the controller
+  //testStates();  // Uncomment to run through all the states
+  
+  // TODO: Add small delay here to allow interrupts to fire?
+  delay(1);
 }
 
 void switchState(systemState state) {
-  Serial << F("State.  Changing to ") << state << endl;
+  Serial << F("State.  Changing to ");
   switch ( state ) {
-    case STARTUP: stateMachine.transitionTo(Startup); break;
-    case OFFLINE: stateMachine.transitionTo(Offline); break;
-    case ONLINE: stateMachine.transitionTo(Online); break;
-    case SLAVED: stateMachine.transitionTo(Slaved); break;
-    case REBOOT: stateMachine.transitionTo(Reboot); break;
-    case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
+    case STARTUP: Serial << "Startup" << endl; stateMachine.transitionTo(Startup); break;
+    //case OFFLINE: stateMachine.transitionTo(Offline); break;
+    //case ONLINE: stateMachine.transitionTo(Online); break;
+    //case SLAVED: stateMachine.transitionTo(Slaved); break;
+    //case REBOOT: stateMachine.transitionTo(Reboot); break;
+    //case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
+    
+    case LONELY: Serial << "Lonely" << endl; stateMachine.transitionTo(Lonely); break;
+    case OHAI: Serial << "Ohai" << endl; stateMachine.transitionTo(Ohai); break;
+    case GOODNUF: Serial << "Goodnuf" << endl; stateMachine.transitionTo(Goodnuf); break;
+    case GOODJOB: Serial << "Goodjob" << endl; stateMachine.transitionTo(Goodjob); break;
+    case WINNING: Serial << "Winning" << endl; stateMachine.transitionTo(Winning); break;
+    case FANFARE: Serial << "Fanfare" << endl; stateMachine.transitionTo(Fanfare); break;
     default:
       Serial << F("ERROR!  unknown state.") << endl;
   }
 }
 
-// DANNE, replace this with a "sound check" at startup, then proceed to state==Offline
-void startup() {
+// Test states by running through each
+void testStates() {
+  static Metro stateChange(15000UL);
 
-  // From TsunamiDemo.ino:
-  int i;
-  static Metro gLedMetro(500);           // LED blink interval timer
-  static Metro gSeqMetro(6000);          // Sequencer state machine interval timer
+  if (!stateChange.check()) return;
 
-  static byte gLedState = 0;             // LED State
-  static int  gSeqState = 5;             // Main program sequencer state
-  static int  gRateOffset = 0;           // Tsunami sample-rate offset
-  static int  gNumTracks;                // Number of tracks on SD card
+  Serial << "Changing test state" << endl;
+  
+  if (stateMachine.isInState(Startup)) {
+    Serial << "Changing to Lonely" << endl;
+    stateMachine.transitionTo(Lonely);
+  }
+  
+  if (stateMachine.isInState(Lonely)) {
+    Serial << "Changing to OHAI" << endl;
+    stateMachine.transitionTo(Ohai);
+  }
 
-  static char gTsunamiVersion[VERSION_STRING_LEN];    // Tsunami version string
+  if (stateMachine.isInState(Ohai)) {
+    Serial << "Changing to GOODNUF" << endl;
+    stateMachine.transitionTo(Goodnuf);
+  }
 
-  // Call update on the Tsunami to keep the track playing status current.
-  tsunami.update();
+  if (stateMachine.isInState(Goodnuf)) {
+    Serial << "Changing to GoodJob" << endl;
+    stateMachine.transitionTo(Goodjob);
+  }
 
-  // Check if the sequencer timer has elapsed and perform the appropriate
-  //  state action if so. States 3 and 5 wait for tracks to stop playing and
-  //  are therefore not in the metro event. They are instead polled after the
-  //  metro check.
-  if (gSeqMetro.check() == 1) {
+  if (stateMachine.isInState(Goodjob)) {
+    Serial << "Changing to Winning" << endl;
+    stateMachine.transitionTo(Winning);
+  }
 
-    switch (gSeqState) {
+  if (stateMachine.isInState(Winning)) {
+    Serial << "Changing to Fanfare" << endl;
+    stateMachine.transitionTo(Fanfare);
+  }
 
-      // State 0: Demonstrates how to fade in a music track
-      case 0:
-        // First retrieve and print the version and number of tracks
-        if (tsunami.getVersion(gTsunamiVersion, VERSION_STRING_LEN)) {
-          Serial.print(gTsunamiVersion);
-          Serial.print("\n");
+  if (stateMachine.isInState(Fanfare)) {
+    Serial << "Changing to Idle" << endl;
+    stateMachine.transitionTo(Lonely);
+  }
 
-        }
-        else
-          Serial.print("WAV Trigger response not available");
+  stateChange.reset();
+}
 
-        gNumTracks = tsunami.getNumTracks();
-        Serial.print("Number of tracks = ");
-        Serial.print(gNumTracks);
-        Serial.print("\n");
+// Mimic the controller by handling state transforms
+void mimicController() {
+  static Metro ohaiTimeout(4500UL);
+  static Metro corrTimeout(30000UL);
+  static Metro fanfareTimeout(30000UL);
+  /*
+  if (stateMachine.isInState(Online)) {
+    if (checkForLonely()) {
+      if (millis() - lastActivity > LONELY_TIME) {
+        Serial << "Moving to Lonely state from Online" << endl;
+        stateMachine.transitionTo(Lonely);
+        return;
+      }
+    } else {
+      Serial << "Moving to Ohai state" << endl;
+      ohaiTimeout.reset();
+      stateMachine.transitionTo(Ohai);
+      return;
+    }
+  }
+*/
+  if (stateMachine.isInState(Lonely)) {
+    if (!checkForLonely()) {
+      Serial << "Moving to Ohai state" << endl;
+      ohaiTimeout.reset();
+      stateMachine.transitionTo(Ohai);
+      return;
+    }
 
-        tsunami.samplerateOffset(0, 0);        // Reset sample rate offset to 0
-        tsunami.masterGain(0, 0);              // Reset the master gain to 0dB
+    return;
+  }
 
-        tsunami.trackGain(2, -40);             // Preset Track 2 gain to -40dB
-        tsunami.trackPlayPoly(2, 0, true);     // Start Track 2
-        tsunami.trackFade(2, 0, 2000, false);  // Fade Track 2 to 0dB over 2 sec
-        gSeqState = 1;                         // Advance to state 1
-        break;
+  if (stateMachine.isInState(Ohai)) {
+      //erial << "Checking intro timeout" << endl;
+      if ( ohaiTimeout.check() ) {
+        Serial << "Ohai time done" << endl;
+        corrTimeout.reset();
+        lastActivity = millis();
+        stateMachine.transitionTo(Goodnuf);
+        return;
+      }
+  }
+  
+  if (stateMachine.isInState(Goodnuf) || stateMachine.isInState(Goodjob) || stateMachine.isInState(Winning)) {
+    /*
+    if (checkForIdle()) {
+      if (millis() - lastActivity > IDLE_TIME) {
+        Serial << "Moving to idle state from c*" << endl;
+        stateMachine.transitionTo(Idle);
+        return;
+      }
+    }
+    */
 
-      // State 1: Demonstrates how to cross-fade music tracks
-      case 1:
-        tsunami.trackGain(1, -40);             // Preset Track 1 gain to -40dB
-        tsunami.trackPlayPoly(1, 0, true);     // Start Track 1
-        tsunami.trackFade(1, 0, 3000, false);  // Fade Track 1 up to 0db over 3 secs
-        tsunami.update();
-        delay(2000);                           // Wait 2 secs
-        tsunami.trackFade(2, -40, 3000, true); // Fade Track 2 down to -40dB over 3 secs and stop
-        Serial.print("Waiting for Track 2 to finish... ");
-        gSeqState = 2;                         // Advance to state 2
-        break;
-
-      // State 3: Honk the horn 2 times
-      case 3:
-        tsunami.trackPlayPoly(5, 0, true);     // Start Track 5 poly
-        tsunami.update();
-        delay(500);
-        tsunami.trackStop(5);                  // Stop Track 5
-        tsunami.update();
-        delay(250);
-        tsunami.trackPlayPoly(5, 0, true);     // Start Track 5 poly
-        tsunami.update();
-        delay(500);
-        tsunami.trackStop(5);                  // Stop Track 5
-        gSeqState = 4;                         // Advance to state 4
-        break;
-
-      // State 4: Fade out and stop dialog
-      case 4:
-        tsunami.trackLoop(4, 0);               // Disable Track 4 looping
-        tsunami.trackFade(4, -50, 5000, true); // Fade Track 4 to -50dB and stop
-        Serial.print("Waiting for Track 4 to finish... ");
-        gSeqState = 5;                         // Advance to state 5
-        break;
-
-      // State 6: Demonstrates preloading tracks and starting them in sample-
-      //  sync, and real-time samplerate control (pitch bending);
-      case 6:
-        tsunami.trackLoad(6, 0, true);         // Load and pause Track 6
-        tsunami.trackLoad(7, 0, true);         // Load and pause Track 7
-        tsunami.trackLoad(8, 0, true);         // Load and pause Track 8
-        tsunami.resumeAllInSync();             // Start all in sample sync
-
-        // Decrement the sample rate offset from 0 to -32767 (1 octave down)
-        //  in 10 ms steps
-        gRateOffset = 0;
-        for (i = 0; i < 127; i++) {
-          gRateOffset -= 256;
-          tsunami.samplerateOffset(0, gRateOffset);
-          delay(10);
-        }
-        gRateOffset = -32767;
-        tsunami.samplerateOffset(0, gRateOffset);
-
-        // Hold for 1 second
-        delay(1000);
-
-        // Now increment to +32767 (1 octave up) in 10ms steps
-        for (i = 0; i < 255; i++) {
-          gRateOffset += 256;
-          tsunami.samplerateOffset(0, gRateOffset);
-          delay(10);
-        }
-        gRateOffset = 32767;
-        tsunami.samplerateOffset(0, gRateOffset);
-
-        // Hold for 1 second, the stop all tracks
-        delay(1000);
-        tsunami.stopAllTracks();               // Stop all
-        gSeqState = 0;                         // Advance to state 0
-        break;
-
-    } // switch
-
-  } // if (gSeqState.check() == 1)
-
-  // State 2: Wait for Track 2 to stop, then fade down the music and start the
-  //  dialog track looping.
-  if (gSeqState == 2) {
-    gSeqMetro.reset();                             // Reset the sequencer metro
-    if (!tsunami.isTrackPlaying(2)) {
-      Serial.print("Track 2 done\n");
-      tsunami.trackFade(1, -6, 500, false);      // Lower the music volume
-      tsunami.trackLoop(4, 1);                   // Enable Track 4 looping
-      tsunami.trackPlayPoly(4, 0, true);         // Start Track 4 poly
-      gSeqState = 3;                             // Advance to state 3;
+    if ( corrTimeout.check() ) {
+      Serial << "Correspondence Progression" << endl;
+      if (stateMachine.isInState(Goodnuf)) {
+        Serial << "Moving to GoodJob" << endl;
+        corrTimeout.reset();
+        lastActivity = millis();
+        stateMachine.transitionTo(Goodjob);
+        return;
+      }
+      if (stateMachine.isInState(Goodjob)) {
+        Serial << "Moving to Winning" << endl;
+        corrTimeout.reset();
+        lastActivity = millis();
+        stateMachine.transitionTo(Winning);
+        return;
+      }
+      if (stateMachine.isInState(Winning)) {
+        Serial << "Moving to Fanfare" << endl;
+        corrTimeout.reset();
+        fanfareTimeout.reset();
+        lastActivity = millis();
+        stateMachine.transitionTo(Fanfare);
+        return;
+      }
     }
   }
 
-  // State 5: Wait for Track 4 to stop, then play three tracks sequentially and
-  //  stop all with a 5 sec fade to -50dB. This is how you can implement MIDI
-  //  Note-On/Off control for: MIDI -> Arduino -> WAV Trigger.
-  if (gSeqState == 5) {
-    gSeqMetro.reset();
-    if (!tsunami.isTrackPlaying(4)) {
-      Serial.print("Track 4 done\n");
-      tsunami.masterGain(0, -8);                 // Lower main volume
-      tsunami.trackPlayPoly(6, 0, true);         // Play first note
-      tsunami.update();
-      delay(1000);
-      tsunami.trackPlayPoly(7, 0, true);         // Play second note
-      tsunami.update();
-      delay(1000);
-      tsunami.trackPlayPoly(8, 0, true);         // Play third note
-      tsunami.update();
-      delay(1000);
-      tsunami.trackFade(6, -50, 5000, true);     // Fade Track 6 to -50dB and stop
-      tsunami.trackFade(7, -50, 5000, true);     // Fade Track 7 to -50dB and stop
-      tsunami.trackFade(8, -50, 5000, true);     // Fade Track 8 to -50dB and stop
-      gSeqState = 6;
-    }
-  }
-
-  // If time to do so, toggle the LED
-  if (gLedMetro.check() == 1) {
-    if (gLedState == 0) gLedState = 1;
-    else gLedState = 0;
-    digitalWrite(LED, gLedState);
-  } // if (gLedMetro.check() == 1)
-
-  // Delay 30 msecs
-  delay(30);
-
-  // after N seconds, transition to Offline, but we could easily get directed to Online before that.
-  static Metro startupTimeout(5000UL);
-  if ( startupTimeout.check() ) {
-    tsunami.stopAllTracks();
-    tsunami.samplerateOffset(0, 0);
-    tsunami.masterGain(0, 0);              // Reset the master gain to 0dB
-
-    //    tsunami.trackLoop(CATS, 1);                   // Enable Track 4 looping
-    //    tsunami.trackPlayPoly(CATS, 0, true);         // Start Track 4 poly
-
-    stateMachine.transitionTo(Offline);
+  if (stateMachine.isInState(Fanfare)) {
+      if ( fanfareTimeout.check() ) {
+        Serial << "Win time done" << endl;
+        stateMachine.transitionTo(Lonely);
+        return;
+      }
   }
 
 }
 
+boolean checkForLonely() {
+   int detected = 0;
+   long totPower = 0;
+   for ( byte up = 0; up < N_ARCH; up++ ) {
+      if ( sAD[up].hasUpdate ) {
+        // we have an update to distance information in sAD[i].dist
+  
+        // make some noise; simple treshold-based detection of distance-closer-than
+        uint16_t thresh = sAD[up].dist.max / 4;
+        for ( byte j = 0; j < N_SENSOR; j++ ) {
+          if ( sAD[up].dist.prox[j] > thresh ) {
+            detected++;
+          }
+          totPower += sAD[up].dist.prox[j];
+        }
+  
+        // note that we've handled the update already
+        sAD[up].hasUpdate = false;
+      }
+  }
+
+/* . // This generates a fair bit of false positives
+  if (detected > 1) {
+    Serial << "Detected: " << detected << endl;
+    lastActivity = millis();
+    return false;
+  }
+*/
+  if (detected > 1 && totPower > sAD[0].dist.max) {  // TODO: Smells like a magic number, might change in the field
+    Serial << "Detected: " << detected << " power: " << totPower << endl;
+    lastActivity = millis();
+    return false;
+  }
+
+  return true;
+}
+
+
+int lonelyTrack;
+void lonelyEnter() {
+    tsunami.stopAllTracks();
+
+    lonelyTrack = random(LONELY_START, LONELY_START+LONELY_NUM);
+    Serial << "Playing idle track: " << lonelyTrack << endl;
+
+    tsunami.trackGain(lonelyTrack,0);   
+    tsunami.trackPlayPoly(lonelyTrack, 0, true);   
+    lonelyTimer.interval(LONELY_PLAY_SPACING);
+    lonelyTimer.reset();
+}
+
+// The game is idle waiting for a user.  Mix in line in with attract sounds.  Randomly plays track idle_* every few minutes
+void lonely() {
+    if (!lonelyTimer.check()) return;
+
+    tsunami.trackStop(lonelyTrack);
+    
+    lonelyTrack = random(LONELY_START, LONELY_START+LONELY_NUM);
+    Serial << "Playing new lonely track: " << lonelyTrack << endl;
+
+    tsunami.trackGain(lonelyTrack,0);   
+    tsunami.trackPlayPoly(lonelyTrack, 0, true);   
+    lonelyTimer.reset();
+ }
+
+ void lonelyExit() {
+  Serial << "Stoping lonely track" << endl;
+  tsunami.trackStop(lonelyTrack);   
+ }
+
+int ohaiTrack;
+
+void ohaiEnter() {
+    tsunami.stopAllTracks();
+
+    ohaiTrack = random(OHAI_START, OHAI_START+OHAI_NUM);
+    Serial << "Playing ohai track: " << ohaiTrack << endl;
+    tsunami.trackGain(ohaiTrack,0);   
+    tsunami.trackPlayPoly(ohaiTrack, 0, true); 
+    delay(200);
+    tsunami.update();  
+}
+
+void ohaiExit() {
+  //Serial << "Stoping intro track" << endl;
+  //tsunami.trackStop(ohaiTrack);  
+}
+
+
+
+void goodnuf() {
+  static int track = 0;
+
+  if (!tsunami.isTrackPlaying(track)) {
+    track = random(GOODNUF_START, GOODNUF_START+GOODNUF_NUM);
+    Serial << "Playing goodnuf track: " << track << endl;
+    //tsunami.stopAllTracks();  // Goodnuf seems to come on top of ohai.  Let ohai finish.
+    tsunami.trackGain(track,0);   
+    tsunami.trackLoop(track,true);   
+    tsunami.trackPlayPoly(track, 0, true); 
+    delay(200); // Allow for track startup time
+  }
+}
+
+void goodjob() {
+  static int track = 0;
+
+  if (!tsunami.isTrackPlaying(track)) {
+    track = random(GOODJOB_START, GOODJOB_START+GOODJOB_NUM);
+    Serial << "Playing goodjob track: " << track << endl;
+    tsunami.stopAllTracks();
+    tsunami.trackGain(track,0);   
+    tsunami.trackLoop(track,true);   
+    tsunami.trackPlayPoly(track, 0, true); 
+    delay(200);
+  }
+}
+
+void winning() {
+  static int track = 0;
+
+  if (!tsunami.isTrackPlaying(track)) {
+    track = random(WINNING_START, WINNING_START+WINNING_NUM);
+    Serial << "Playing winning track: " << track << endl;
+    tsunami.stopAllTracks();
+    tsunami.trackGain(track,0);   
+    tsunami.trackLoop(track,true);   
+    tsunami.trackPlayPoly(track, 0, true); 
+    delay(200);
+  }
+}
+
+// Player reached the win condition.  Play a long(30s) win track
+void fanfare() {
+    static boolean playing = false;
+    static int track;
+
+    if (!playing) {
+      tsunami.stopAllTracks();
+
+      track = random(FANFARE_START, FANFARE_START+FANFARE_NUM);
+      Serial << "Playing winning track: " << track << endl;
+      tsunami.trackGain(track,0);   
+      tsunami.trackPlayPoly(track, 0, true); 
+      delay(200);
+      tsunami.update();
+      playing = true;
+    } else {  
+      if (!tsunami.isTrackPlaying(track)) {
+        Serial << "Winning track done" << endl;
+        tsunami.trackStop(track);
+        tsunami.update();
+        playing = false;
+      }  
+    }
+}
+
+
+// Play a sound at startup to confirm working hardware
+void startup() {
+    static boolean startupPlaying = false;
+    static int startupTrack;
+
+    if (!startupPlaying) {
+      Serial << "Start Startup" << endl;
+      startupTrack = FANFARE_START;
+      tsunami.trackGain(startupTrack,0);   
+      tsunami.trackPlayPoly(startupTrack, 0, true); 
+      tsunami.update();
+      startupPlaying = true;
+      lastActivity = millis();    
+
+      delay(100);
+    } else {  
+      static Metro startupTimeout(8000UL);
+      if ( startupTimeout.check() ) {
+        Serial << "Startup track done" << endl;
+        tsunami.trackStop(startupTrack);
+        tsunami.update();
+
+        startupPlaying = false;
+        stateMachine.transitionTo(Lonely);
+      }
+    }
+}
+
+/*
 void offline() {
   if ( comms.isConnected() ) {
     Serial << F("GOOD.  online!") << endl;
+    lastActivity = millis();
     stateMachine.transitionTo(Online);
-  } else {
-    normal(false);
   }
 }
 
 void online() {
   if ( comms.isConnected() ) {
-    normal(true);
   } else {
     Serial << F("WARNING.  offline!") << endl;
     stateMachine.transitionTo(Offline);
   }
 }
+*/
 
-// DANNE, this is the crucial part.  When we get distance and frequency information, how do those translate to sound?
-void normal(boolean isOnline) {
-  // what to do with the topics?
-  if ( isOnline ) {
+/*      
+  // loop across arches
+  for ( byte up = 0; up < N_ARCH; up++ ) {
+    if ( sAF[up].hasUpdate ) {
+      // we have an update to frequency information in sAF[i].freq
 
-    // loop across arches
-    for ( byte up = 0; up < N_ARCH; up++ ) {
-      if ( sAF[up].hasUpdate ) {
-        // we have an update to frequency information in sAF[i].freq
+      // make some noise
+      // crappy
+      uint16_t avgPower[N_SENSOR] = {0};
+      // frequency power
+      uint16_t power[N_SENSOR][N_FREQ_BINS] = {{0.0}};
 
-        // make some noise
-        // crappy
-        uint16_t avgPower[N_SENSOR] = {0};
-        // frequency power
-        uint16_t power[N_SENSOR][N_FREQ_BINS] = {{0.0}};
-
-        // do the boneheaded thing and sum up the bins across all sensors
-        uint32_t sumSensors[N_FREQ_BINS] = {0};
-        uint32_t maxSum = 0;
-        for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
-          for ( byte i = 0; i < N_SENSOR; i++ ) {
-            sumSensors[j] += sAF[up].freq.power[i][j];
-          }
-          if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
+      // do the boneheaded thing and sum up the bins across all sensors
+      uint32_t sumSensors[N_FREQ_BINS] = {0};
+      uint32_t maxSum = 0;
+      for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
+        for ( byte i = 0; i < N_SENSOR; i++ ) {
+          sumSensors[j] += sAF[up].freq.power[i][j];
         }
-
-        Serial << F("Arch ") << up << F(" ");
-        Serial << F("Freq bins: ");
-        // set the LEDs proportional to bins, normalized to maximum bin
-        for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
-          uint32_t value = map( sumSensors[j],
-                                (uint32_t)0, maxSum,
-                                (uint32_t)0, (uint32_t)255
-                              );
-          Serial << value << ",";
-          //    leftDown[j] = CHSV(archHue[myArch], archSat[myArch], brighten8_video(constrain(value, 0, 255)));
-        }
-        Serial << endl;
-        
-        // note that we've handled the update already
-        sAF[up].hasUpdate = false;
+        if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
       }
-      if ( sAD[up].hasUpdate ) {
-        // we have an update to distance information in sAD[i].dist
 
-        // make some noise; simple treshold-based detection of distance-closer-than
-        uint16_t thresh = sAD[up].dist.max >> 1; // div2
-        for ( byte j = 0; j < N_SENSOR; j++ ) {
-          if ( sAD[up].dist.prox[j] > thresh ) {
-            tsunami.trackPlayPoly(j + 1, 0, false);
-          }
-        }
-
-        // note that we've handled the update already
-        sAD[up].hasUpdate = false;
+      Serial << F("Freq bins: ");
+      // set the LEDs proportional to bins, normalized to maximum bin
+      for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
+        uint32_t value = map( sumSensors[j],
+                              (uint32_t)0, maxSum,
+                              (uint32_t)0, (uint32_t)255
+                            );
+        Serial << value << ",";
+        //    leftDown[j] = CHSV(archHue[myArch], archSat[myArch], brighten8_video(constrain(value, 0, 255)));
       }
+      Serial << endl;
+      
+      // note that we've handled the update already
+      sAF[up].hasUpdate = false;
+    }
+    if ( sAD[up].hasUpdate ) {
+      // we have an update to distance information in sAD[i].dist
+
+      // make some noise; simple treshold-based detection of distance-closer-than
+      uint16_t thresh = sAD[up].dist.max >> 1; // div2
+      for ( byte j = 0; j < N_SENSOR; j++ ) {
+        if ( sAD[up].dist.prox[j] > thresh ) {
+          tsunami.trackPlayPoly(j + 1, 0, false);
+        }
+      }
+
+      // note that we've handled the update already
+      sAD[up].hasUpdate = false;
     }
   }
-}
+  */
 
 void slaved() {
   // NOP, currently.  Will look for lighting directions, either through UDP (direct) or MQTT (procedural).
 }
+
 
