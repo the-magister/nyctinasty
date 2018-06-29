@@ -23,7 +23,7 @@ const uint32_t transitionLockoutTime = 3000UL;
 
 // fold-increase from basal sensor readings for "yes, have a player".  
 // See decidePlayerState()
-const double isPlayerThreshold[N_ARCH] = {1.5, 1.5, 1.5};
+const double isPlayerThreshold[N_ARCH] = {1.25, 1.25, 1.25};
 
 // threshold on coordination for "yes, they're coordinated".  See decideCoordinationState()
 const double areCoordinatedThreshold[N_ARCH] = {0.9, 0.9, 0.9};
@@ -269,35 +269,15 @@ void decidePlayerState(byte arch) {
   if( state != sC.isPlayer[arch] ) {
     sC.isPlayer[arch] = state;
     Serial << "decidePlayerState.  isPlayer? A" << arch << "=" << state << endl;
+    sendSettings();
   }
   
-  if( !sC.isPlayer[arch] ) {
+  if( !sC.isPlayer[arch] && power < smoothedPower[arch] ) {
     smoothedPower[arch] = (smoothedPower[arch]*(s-1.0) + power)/s;
 //    Serial << "decidePlayerState.  smoothed power? A0=" << smoothedPower[0];
 //    Serial << " A1=" << smoothedPower[1];
 //    Serial << " A2=" << smoothedPower[2] << endl;    
   }
-
-
-  /*
-  // want the states to be sticky, requiring (maxCount/2,maxCount) opposite readings before flipping.
-  static byte count[N_ARCH] = {maxStateCount/2};
-  if( state == sC.isPlayer[arch] ) { 
-      count[arch] += count[arch]<maxStateCount ? 1 : 0;
-  } else { 
-      count[arch] -= count[arch]>0 ? 1 : 0;
-  } 
-
-  // if we've decremented to zero, time to swap states.
-  if( count[arch]==0 ) {
-    Serial << "isPlayer.  Arch=" << arch << " isPlayer=" << state << endl;
-    sC.isPlayer[arch] = state; 
-    count[arch] = maxStateCount/2;
-  }
-
-//  if( arch==2 ) Serial << "count=" << count[arch] << " state=" << state << " isPlayer=" << sC.isPlayer[arch] << endl;
-*/
-  
 }
 
 // algorithm for coordination detection
@@ -326,11 +306,14 @@ void decideCoordination(byte pair) {
 //  if( smoothCoord[pair] > 0 ) {
 //    Serial << "decideCoordination. P" << pair << "=" << smoothCoord[pair] << endl;
 //  }
-  if( smoothCoord[pair] > areCoordinatedThreshold[pair] ) {
-    sC.areCoordinated[pair] = true;
-  } else {
-    sC.areCoordinated[pair] = false;
-  }
+
+  boolean areCoordinated = smoothCoord[pair] > areCoordinatedThreshold[pair];
+  if( areCoordinated != sC.areCoordinated[pair] ) {
+    Serial << "decideCoordination.  areCoordinated? P" << pair << "=" << areCoordinated << endl;
+    sC.areCoordinated[pair] = areCoordinated;
+    sendSettings();
+  } 
+
 }
 
 byte totalPlayersGE(byte th) { return( (sC.isPlayer[0]+sC.isPlayer[1]+sC.isPlayer[2]) >= th ); }
@@ -344,12 +327,15 @@ boolean transitionLockoutExpired() { return( millis() > nextTransitionAllowedAt 
 void genericStateEnter(systemState state) {
   resetTransitionLockout();
   
+  Serial << F("State change.");
   sC.state = state;
   
-  comms.publish(&sC);    
+  sendSettings();  
+}
 
-  Serial << F("State change. to=");
-  switch(state) {
+void sendSettings() {
+  Serial << "Settings. state=";
+  switch(sC.state) {
     case STARTUP: Serial << "STARTUP"; break;  //  all roles start here
   
     case LONELY: Serial << "LONELY"; break;   // 0 players
@@ -361,16 +347,19 @@ void genericStateEnter(systemState state) {
   
     case REBOOT: Serial << "REBOOT"; break;   //  trigger to reboot 
   }
+
   Serial << ". isPlayer? A0=" << sC.isPlayer[0];
   Serial << " A1=" << sC.isPlayer[1];
   Serial << " A2=" << sC.isPlayer[2];
-  Serial << ". coord? A01=" << sC.areCoordinated[0];
+
+  Serial << ". areCoord? A01=" << sC.areCoordinated[0];
   Serial << " A12=" << sC.areCoordinated[1];
   Serial << " A20=" << sC.areCoordinated[2];
   Serial << endl;
+  
+  comms.publish(&sC);    
+
 }
-
-
 
 
 

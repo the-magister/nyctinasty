@@ -62,10 +62,10 @@ CRGBSet leftBar1 = leftBack(0, LEDS_BAR-1);
 CRGBSet leftBar2 = leftFront(0, LEDS_BAR-1);
 
 // verticals
-CRGBSet leftUp = leftFront(LEDS_BAR, LEDS_PER_PIN-1);
-CRGBSet rightUp = rightFront(LEDS_BAR, LEDS_PER_PIN-1);
-CRGBSet leftDown = leftBack(LEDS_BAR, LEDS_PER_PIN-1);
-CRGBSet rightDown = rightBack(LEDS_BAR, LEDS_PER_PIN-1);
+CRGBSet leftUp = leftBack(LEDS_BAR, LEDS_PER_PIN-1);
+CRGBSet rightUp = rightBack(LEDS_BAR, LEDS_PER_PIN-1);
+CRGBSet leftDown = leftFront(LEDS_BAR, LEDS_PER_PIN-1);
+CRGBSet rightDown = rightFront(LEDS_BAR, LEDS_PER_PIN-1);
 
 // color choices, based on arch information
 const CHSV archColor[N_ARCH] = {
@@ -218,12 +218,12 @@ void calculateCoordPalette() {
   CRGBArray<16> pal;
   
   if( sC.settings.areCoordinated[leftCoord] ) {
-    pal.fill_gradient(archColor[leftArch], archColor[myArch], archColor[leftArch], FORWARD_HUES );
+    pal.fill_gradient(archColor[leftArch], archColor[myArch], archColor[leftArch] );
   } else {
     pal = CRGB::Black;
   }
   if( sC.settings.areCoordinated[rightCoord] ) {
-    pal.fill_gradient(archColor[rightArch], archColor[myArch], archColor[rightArch], FORWARD_HUES );
+    pal.fill_gradient(archColor[rightArch], archColor[myArch], archColor[rightArch] );
   } else {
     pal = CRGB::Black;
   }
@@ -246,10 +246,10 @@ void calculatePlayerPalette() {
   );
 
   CRGBArray<16> palLeft;
-  palLeft.fill_gradient(left, me, left, FORWARD_HUES);
+  palLeft.fill_gradient(left, me, left);
 
   CRGBArray<16> palRight;
-  palRight.fill_gradient(right, me, right, FORWARD_HUES);
+  palRight.fill_gradient(right, me, right);
  
   // copy out
   for(byte i=0; i<16; i++) {
@@ -320,6 +320,7 @@ void startup() {
 
 void lonely() {
   // need some kind of "walk into the arches" animation
+  playerAndCoordinationUpdate();
 }
 
 void ohai() {
@@ -340,6 +341,7 @@ void winning() {
 
 void fanfare() {
   // need some kind of "yeah, playah!" animation
+  playerAndCoordinationUpdate();
 }
 
 void playerAndCoordinationUpdate() {
