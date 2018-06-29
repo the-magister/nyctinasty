@@ -15,6 +15,13 @@ enum systemState {
 	REBOOT,		//  trigger to reboot  
 	REPROGRAM,	//  trigger to contact the webserver to pull a new binary 
 
+        IDLE,           // Initialized but no activity
+        INTRO,          // New participant has arrived after an IDLE state
+        C1,             // Low corresspondence
+        C2,             // Med corresspondence
+        C3,             // High corresspondence
+        WIN,            // Win animation
+       
 	N_STATES	//	as a counter/max
 };
 

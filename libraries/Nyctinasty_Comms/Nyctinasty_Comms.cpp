@@ -23,7 +23,11 @@ void NyctComms::begin(NyctRole role) {
 	Serial << F("Who's your daddy? ") << myName << endl;
 	
 	// comms setup
-	if( WiFi.status()==WL_CONNECTED ) WiFi.disconnect();
+	if( WiFi.status()==WL_CONNECTED ) {
+		Serial << "Wifi already connected, disconnecting" << endl;
+		//WiFi.disconnect();  // Alan: maybe disconnect is unnecessary?
+		//delay(1000);  // Alan: added delay 
+	}
 	
 // variation in WiFi library calls btw ESP8266 and ESP32
 #ifdef ARDUINO_ARCH_ESP32
@@ -303,18 +307,18 @@ void NyctComms::connectWiFi(String ssid, String pwd, uint32_t interval) {
 		retryCount++;
 		toggleLED();
 
-/*		
+		
 		Serial << F("WiFi status=") << WiFi.status();
 		Serial << F(" Retry #") << retryCount;
 		Serial << F(" Attempting WiFi connection to ") << ssid << F(" password ") << pwd<< endl;
-*/
+
 		// Attempt to connect
 		WiFi.begin(ssid.c_str(), pwd.c_str());
 		
 		connectInterval.reset();
 	}
 	
-//	if( retryCount >= 10 ) reboot();
+	//if( retryCount >= 10 ) reboot();  
 }
 
 // connect to MQTT broker and other services
@@ -326,7 +330,7 @@ void NyctComms::connectServices(String broker, word port, uint32_t interval) {
 
 		retryCount++;
 		toggleLED();
-		
+
 		if ( MDNS.begin ( myName.c_str() ) ) {
 			Serial << F("mDNS responder started: ") << myName << endl;
 		} else {
