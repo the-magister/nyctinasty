@@ -19,9 +19,11 @@
 #define SHOW_SERIAL_DEBUG true
 
 // my role and arch number
-NyctRole myRole = Arch2; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
+NyctRole myRole = N_ROLES; // see Nyctinasty_Comms.h; set N_ROLES to pull from EEPROM
 // Arch0, Arch1, Arch2 for bootstrapping a new controller.
 byte myArch;
+byte leftArch, rightArch;
+byte leftCoord, rightCoord;
 
 // wire it up
 #define RX D1 // GPIO5
@@ -53,26 +55,37 @@ CRGBArray<LEDS_PER_PIN> rightBack;
 CRGBArray<LEDS_PER_PIN> leftFront;
 CRGBArray<LEDS_PER_PIN> rightFront;
 
-// verticals
-CRGBSet leftUp = leftFront(LEDS_BAR, LEDS_PER_PIN-1);
-CRGBSet rightUp = rightFront(LEDS_BAR, LEDS_PER_PIN-1);
-CRGBSet leftDown = leftBack(LEDS_BAR, LEDS_PER_PIN-1);
-CRGBSet rightDown = rightBack(LEDS_BAR, LEDS_PER_PIN-1);
+// bars
+CRGBSet rightBar1 = rightBack(0, LEDS_BAR-1);
+CRGBSet rightBar2 = rightFront(0, LEDS_BAR-1);
+CRGBSet leftBar1 = leftBack(0, LEDS_BAR-1);
+CRGBSet leftBar2 = leftFront(0, LEDS_BAR-1);
 
-// color choices, based on arch and sepal information
-byte archHue[N_ARCH] = {HUE_RED, HUE_GREEN, HUE_BLUE};
-byte archSat[N_ARCH] = {128, 128, 128};
+// verticals
+CRGBSet leftUp = leftBack(LEDS_BAR, LEDS_PER_PIN-1);
+CRGBSet rightUp = rightBack(LEDS_BAR, LEDS_PER_PIN-1);
+CRGBSet leftDown = leftFront(LEDS_BAR, LEDS_PER_PIN-1);
+CRGBSet rightDown = rightFront(LEDS_BAR, LEDS_PER_PIN-1);
+
+// color choices, based on arch information
+const CHSV archColor[N_ARCH] = {
+  CHSV(HUE_RED, 255, 255),
+  CHSV(HUE_GREEN, 255, 255),
+  CHSV(HUE_BLUE, 255, 255)
+};
 
 // comms
 NyctComms comms;
 
 // define a state for every systemState
 void startup(); State Startup = State(startup);
-void offline(); State Offline = State(offline);
-void online(); State Online = State(online);
-void slaved(); State Slaved = State(slaved);
+void lonely(); State Lonely = State(lonely);
+void ohai(); State Ohai = State(ohai);
+void goodnuf(); State Goodnuf = State(goodnuf);
+void goodjob(); State Goodjob = State(goodjob);
+void winning(); State Winning = State(winning);
+void fanfare(); State Fanfare = State(fanfare);
 void reboot() { comms.reboot(); }; State Reboot = State(reboot);
-void reprogram() { comms.reprogram("Sepal_Arch.ino.bin"); }; State Reprogram = State(reprogram);
 FSM stateMachine = FSM(Startup); // initialize state machine
 
 // incoming message storage and flag for update
@@ -133,13 +146,38 @@ void setup() {
   comms.begin(myRole);
   myRole = comms.getRole();
   myArch = myRole - 1;
-
+  switch(myArch) {
+    case 0: 
+      // sC.isPlayer indexes
+      leftArch=1; rightArch=2; 
+      // sC.areCoordinated indexes
+      leftCoord=0; rightCoord=2;
+      break;
+    case 1: 
+      leftArch=2; rightArch=0; 
+      leftCoord=1; rightCoord=0;
+      break;
+    case 2: 
+      leftArch=0; rightArch=1; 
+      leftCoord=2; rightCoord=1;
+      break;    
+  }
+  Serial << F("Arch indexes: left=") << leftArch << F(" my=") << myArch << F(" right=") << rightArch << endl;
+  Serial << F("Coordination indexes: left=") << leftCoord << F(" right=") << rightCoord << endl;
+  
   // subscribe
   comms.subscribe(&sC.settings, &sC.hasUpdate);
-  for ( byte i = 0; i < N_ARCH; i++ ) {
+  for ( byte a = 0; a < N_ARCH; a++ ) {
     // no need to subscribe to our own message
-    if ( i != myArch ) comms.subscribe(&sAF[i].freq, &sAF[i].hasUpdate, i);
+    if ( a != myArch ) comms.subscribe(&sAF[a].freq, &sAF[a].hasUpdate, a);
   }
+
+  Serial << F("DISTANCE_SAMPLING_RATE, ms: ") << DISTANCE_SAMPLING_RATE << endl;
+  Serial << F("DISTANCE_SAMPLING_FREQ, Hz: ") << DISTANCE_SAMPLING_FREQ << endl;
+  Serial << F("N_FREQ_SAMPLES, #: ") << N_FREQ_SAMPLES << endl;
+  Serial << F("FILL_TIME, ms: ") << FILL_TIME << endl;
+  Serial << F("Lowest Freq Bin, Hz: ") << (float)(0+1)*(float)DISTANCE_SAMPLING_FREQ/(float)N_FREQ_SAMPLES << endl;
+  Serial << F("Highest Freq Bin, Hz: ") << (float)(N_FREQ_BINS+1)*(float)DISTANCE_SAMPLING_FREQ/(float)N_FREQ_SAMPLES << endl;
 
   Serial << F("Startup complete.") << endl;
 }
@@ -148,67 +186,203 @@ void loop() {
   // comms handling
   comms.update();
 
+/*
+  // after 5 seconds, transition to Offline, but we could easily get directed to Online before that.
+  static Metro cycleTimeout(5000UL);
+  if( cycleTimeout.check() ) {
+    sC.settings.state = (systemState)((int)sC.settings.state+1);
+    if( sC.settings.state == REBOOT ) sC.settings.state = STARTUP;
+    sC.hasUpdate = true;
+    cycleTimeout.reset();
+  }
+*/
+
   // check for settings update
   if ( sC.hasUpdate ) {
-    switchState(sC.settings.state);
+    updateState();
+    calculateCoordPalette();
+    calculatePlayerPalette();
     sC.hasUpdate = false;
   }
 
   // do stuff
   stateMachine.update();
+
+  // update the sensor data
+  updateSensors();
 }
 
-void switchState(systemState state) {
-  Serial << F("State.  Changing to ") << state << endl;
-  switch ( state ) {
+CRGBPalette16 coordPalette;
+void calculateCoordPalette() {
+  
+  CRGBArray<16> pal;
+  
+  if( sC.settings.areCoordinated[leftCoord] ) {
+    pal.fill_gradient(archColor[leftArch], archColor[myArch], archColor[leftArch] );
+  } else {
+    pal = CRGB::Black;
+  }
+  if( sC.settings.areCoordinated[rightCoord] ) {
+    pal.fill_gradient(archColor[rightArch], archColor[myArch], archColor[rightArch] );
+  } else {
+    pal = CRGB::Black;
+  }
+
+  // copy out
+  for(byte i=0; i<16; i++) coordPalette[i] = pal[i];
+}
+
+CRGBPalette16 playerPaletteLeft, playerPaletteRight; // left, right
+void calculatePlayerPalette() {
+  
+  CHSV me = CHSV(archColor[myArch].hue, archColor[myArch].sat, 
+    sC.settings.isPlayer[myArch] ? 255 : 0
+  );
+  CHSV left = CHSV(archColor[leftArch].hue, archColor[leftArch].sat, 
+    sC.settings.isPlayer[leftArch] ? 255 : 0
+  );
+  CHSV right = CHSV(archColor[rightArch].hue, archColor[rightArch].sat, 
+    sC.settings.isPlayer[rightArch] ? 255 : 0
+  );
+
+  CRGBArray<16> palLeft;
+  palLeft.fill_gradient(left, me, left);
+
+  CRGBArray<16> palRight;
+  palRight.fill_gradient(right, me, right);
+ 
+  // copy out
+  for(byte i=0; i<16; i++) {
+    playerPaletteLeft[i] = palLeft[i];
+    playerPaletteRight[i] = palRight[i];
+  }
+}
+
+
+void updateState() {
+
+  switch ( sC.settings.state ) {
     case STARTUP: stateMachine.transitionTo(Startup); break;
-    case OFFLINE: stateMachine.transitionTo(Offline); break;
-    case ONLINE: stateMachine.transitionTo(Online); break;
-    case SLAVED: stateMachine.transitionTo(Slaved); break;
+    case LONELY: stateMachine.transitionTo(Lonely); break;
+    case OHAI: stateMachine.transitionTo(Ohai); break;
+    case GOODNUF: stateMachine.transitionTo(Goodnuf); break;
+    case GOODJOB: stateMachine.transitionTo(Goodjob); break;
+    case WINNING: stateMachine.transitionTo(Winning); break;
+    case FANFARE: stateMachine.transitionTo(Fanfare); break;
     case REBOOT: stateMachine.transitionTo(Reboot); break;
-    case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
     default:
       Serial << F("ERROR!  unknown state.") << endl;
   }
+
+  Serial << F("State change. to=");
+  switch( sC.settings.state ) {
+    case STARTUP: Serial << "STARTUP"; break;  //  all roles start here
+  
+    case LONELY: Serial << "LONELY"; break;   // 0 players
+    case OHAI: Serial << "OHAI"; break;   // 1 players
+    case GOODNUF: Serial << "GOODNUF"; break;  // 2 players
+    case GOODJOB: Serial << "GOODJOB"; break;  // 3 players or 2 players coordinated
+    case WINNING: Serial << "WINNING"; break;  // 3 players and 2 players coordinated
+    case FANFARE: Serial << "FANFARE"; break;  // 3 players and 3 players coordinated 
+  
+    case REBOOT: Serial << "REBOOT"; break;   //  trigger to reboot 
+  }
+  Serial << ". isPlayer? A0=" << sC.settings.isPlayer[0];
+  Serial << " A1=" << sC.settings.isPlayer[1];
+  Serial << " A2=" << sC.settings.isPlayer[2];
+  Serial << ". coord? A01=" << sC.settings.areCoordinated[0];
+  Serial << " A12=" << sC.settings.areCoordinated[1];
+  Serial << " A20=" << sC.settings.areCoordinated[2];
+  Serial << endl;
+
 }
 
 void startup() {
   
-  // spoof bar last
-//  for( byte i=0; i<N_SENSOR; i++ ) dist.prox[i] = dist.max;
-
-  static byte hue = archHue[myArch];
+  static byte hue = archColor[myArch].hue;
   EVERY_N_MILLISECONDS(10) {
     // show a throbbing rainbow background
     hue++;
-    leftBack.fill_rainbow(hue, 255 / leftBack.size()); // paint
-    rightBack = leftBack;
-    leftFront.fill_rainbow(hue + 128, -255 / leftFront.size());
-    rightFront = leftFront;
-
-//    updateBarByDistance();
-
+    leftUp.fill_rainbow(hue, 255 / leftUp.size()); // paint
+    rightUp = leftUp;
+    leftDown.fill_rainbow(hue + 128, -255 / leftDown.size());
+    rightDown = leftFront;
+    
+    // color the bar with our color
+    leftBar1.fill_solid(archColor[myArch]);
+    rightBar2 = rightBar1 = leftBar2 = leftBar1;
+    
+    // do it now
     pushToHardware();
   }
 
-  // after 5 seconds, transition to Offline, but we could easily get directed to Online before that.
-  static Metro startupTimeout(5000UL);
-  if( startupTimeout.check() ) stateMachine.transitionTo(Offline);
+}
+
+void lonely() {
+  // need some kind of "walk into the arches" animation
+  playerAndCoordinationUpdate();
+}
+
+void ohai() {
+  playerAndCoordinationUpdate();
+}
+
+void goodnuf() {
+  playerAndCoordinationUpdate();
+}
+
+void goodjob() {
+  playerAndCoordinationUpdate();
+}
+
+void winning() {
+  playerAndCoordinationUpdate();
+}
+
+void fanfare() {
+  // need some kind of "yeah, playah!" animation
+  playerAndCoordinationUpdate();
+}
+
+void playerAndCoordinationUpdate() {
+  updateTopsByCoordination();
+  updateLegsByPlayer();
+}
+
+void updateTopsByCoordination() {
+  static byte colorIndex = 0;  
+  
+  EVERY_N_MILLISECONDS( 20 ) {
+    colorIndex ++;
+    byte j = 0;
+    for ( int i = 0; i < leftUp.size(); i++) {
+      leftUp[i] = ColorFromPalette( coordPalette, colorIndex + j++, 255, LINEARBLEND );
+    }
+    j = 0;
+    for ( int i = 0; i < rightUp.size(); i++) {
+      rightUp[i] = ColorFromPalette( coordPalette, colorIndex + j++, 255, LINEARBLEND );
+    }
+  }  
+}
+
+void updateLegsByPlayer() {
+  static byte colorIndex = 0;
+  
+  EVERY_N_MILLISECONDS( 20 ) {
+    colorIndex ++;
+    byte j = 0;
+    for ( int i = 0; i < leftDown.size(); i++) {
+      leftDown[i] = ColorFromPalette( playerPaletteLeft, colorIndex + j++, 255, LINEARBLEND );
+    }
+    j = 0;
+    for ( int i = 0; i < rightDown.size(); i++) {
+      rightDown[i] = ColorFromPalette( playerPaletteRight, colorIndex + j++, 255, LINEARBLEND );
+    }
+  }  
 
 }
 
-void askForDistance() {
-  // toggled TX pin
-  static boolean pinState = false;
-  static Metro distanceUpdate(DISTANCE_SAMPLING_RATE);
-
-  if ( distanceUpdate.check() ) {
-    distanceUpdate.reset();
-    pinState = !pinState;
-    digitalWrite(TX, pinState);
-  }
-}
-
+void updateSensors() {
 
 /*
  * Order of operation is critical here.  We have three subsystems that use ISRs:
@@ -222,45 +396,10 @@ void askForDistance() {
  *
  */
  
-void offline() {
-  if( comms.isConnected() ) {
-    Serial << F("GOOD.  online!") << endl;
-    stateMachine.transitionTo(Online);
-  } else {
-    normal(false);  
-  }
-}
-
-void online() {
-  if( comms.isConnected() ) {
-    normal(true);
-  } else {
-    Serial << F("WARNING.  offline!") << endl;
-    stateMachine.transitionTo(Offline);
-  }
-}
-
-void normal(boolean isOnline) {
-  static uint32_t counter = 0;
+ static uint32_t counter = 0;
   static boolean publishReady = false;
   static byte fftIndex = 0;
   static Metro pushDistanceInterval(distancePublishRate);
-  
-  // check for an update to frequency data
-  if ( sAF[0].hasUpdate || sAF[1].hasUpdate || sAF[2].hasUpdate ) {
-    // update lower lights by frequency data
-//      updateLegsByFrequency();
-    updateLegsByPeakFreq();
-    
-    // compute concordance
-//    getConcordance();
-
-    // show it
-//    updateTopsByConcordance();
-
-    // reset
-    sAF[0].hasUpdate = sAF[1].hasUpdate = sAF[2].hasUpdate = false;
-  }
 
   // do FFT in segements when the buffer is ready
   if ( bufferReady ) {
@@ -279,7 +418,15 @@ void normal(boolean isOnline) {
   }
 
   // check to see if we need to pull new distance data.
-  askForDistance();
+  // toggled TX pin
+  static boolean pinState = false;
+  static Metro distanceUpdate(DISTANCE_SAMPLING_RATE);
+
+  if ( distanceUpdate.check() ) {
+    distanceUpdate.reset();
+    pinState = !pinState;
+    digitalWrite(TX, pinState);
+  }
 
   // get data from ADCs
   if ( ETin.receiveData() ) {
@@ -296,12 +443,12 @@ void normal(boolean isOnline) {
     if ( publishReady ) {
       publishReady = false;
       // publish
-      if( isOnline ) comms.publish(&sAF[myArch].freq, myArch);
+      comms.publish(&sAF[myArch].freq, myArch);
       // flag that our frequency data are ready
       sAF[myArch].hasUpdate = true;
     } else if( pushDistanceInterval.check() ) {
       // publish distance
-      if( isOnline ) comms.publish(&dist, myArch);
+      comms.publish(&dist, myArch);
       pushDistanceInterval.reset();
     }
 
@@ -321,38 +468,24 @@ void normal(boolean isOnline) {
   }
   
 }
-void slaved() {
-  // NOP, currently.  Will look for lighting directions, either through UDP (direct) or MQTT (procedural).
-}
 
 // adjust lights on the bar with distance readings
 void updateBarByDistance() {
 
   // compute using a dummy set of LEDs
   static CRGBArray<N_SENSOR> bar;
-  for ( byte i = 0; i < N_SENSOR; i++ ) {
+  for ( byte s = 0; s < N_SENSOR; s++ ) {
     // quash noise
-    if ( dist.prox[i] < dist.noise ) dist.prox[i] = dist.min;
+    if ( dist.prox[s] < dist.noise ) dist.prox[s] = dist.min;
     uint16_t intensity = map(
-                           dist.prox[i],
+                           dist.prox[s],
                            dist.min, dist.max,
                            (uint16_t)0, (uint16_t)255
                          );
-    bar[i] = CHSV(archHue[myArch], archSat[myArch], (byte)intensity);
+    bar[s] = CHSV(archColor[myArch].hue, archColor[myArch].sat, (byte)intensity);
   }
 
   // assign to hardware. ugly and direct, but we can see what's going on.
-/*  
-  leftBack[3] = leftFront[3] = bar[0];
-  leftBack[2] = leftFront[2] = bar[1];
-  leftBack[1] = leftFront[1] = bar[2];
-  leftBack[0] = leftFront[0] = bar[3];
-
-  rightBack[0] = rightFront[0] = bar[4];
-  rightBack[1] = rightFront[1] = bar[5];
-  rightBack[2] = rightFront[2] = bar[6];
-  rightBack[3] = rightFront[3] = bar[7];
-*/
   leftBack[2] = leftFront[2] = bar[0];
   leftBack[1] = leftFront[1] = bar[1];
   leftBack[0] = leftFront[0] = bar[2];
@@ -360,7 +493,6 @@ void updateBarByDistance() {
   rightBack[0] = rightFront[0] = bar[3];
   rightBack[1] = rightFront[1] = bar[4];
   rightBack[2] = rightFront[2] = bar[5];
-
 }
 
 // adjust lights on the down/legs with frequency readings
@@ -373,22 +505,22 @@ void updateLegsByFrequency() {
   // do the boneheaded thing and sum up the bins across all sensors
   uint32_t sumSensors[N_FREQ_BINS] = {0};
   uint32_t maxSum = 0;
-  for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
-    for ( byte i = 0; i < N_SENSOR; i++ ) {
-      sumSensors[j] += sAF[myArch].freq.power[i][j];
+  for ( uint16_t b = 0; b < N_FREQ_BINS ; b++ ) {
+    for ( byte s = 0; s < N_SENSOR; s++ ) {
+      sumSensors[b] += sAF[myArch].freq.power[s][b];
     }
-    if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
+    if ( sumSensors[b] > maxSum ) maxSum = sumSensors[b];
   }
 
   Serial << F("Freq bins: ");
   // set the LEDs proportional to bins, normalized to maximum bin
-  for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
-    uint32_t value = map( sumSensors[j],
+  for ( uint16_t b = 0; b < N_FREQ_BINS ; b++ ) {
+    uint32_t value = map( sumSensors[b],
                           (uint32_t)0, maxSum,
                           (uint32_t)0, (uint32_t)255
                         );
     Serial << value << ",";
-    leftDown[j] = CHSV(archHue[myArch], archSat[myArch], brighten8_video(constrain(value, 0, 255)));
+    leftDown[b] = CHSV(archColor[myArch].hue, archColor[myArch].sat, brighten8_video(constrain(value, 0, 255)));
   }
   Serial << endl;
 
@@ -420,7 +552,9 @@ void updateLegsByPeakFreq() {
       byte lightDown = map(roundDown, minFreq, maxFreq, 0, LEDS_VERT-1);
       
       // pick a color; my color is the brightest.
-      CHSV color = CHSV(archHue[a], 255, a == myArch ? 255 : 128 );
+      byte bright = 128;
+      if( a == myArch ) bright = 255;
+      CHSV color = CHSV(archColor[a].hue, 255, bright );
 
       // apply
       leftDown[lightUp] += color;
@@ -587,87 +721,6 @@ void PrintVector(double *vData, uint16_t bufferSize, uint8_t scaleType) {
   Serial.println();
 }
 
-/*
-void getConcordance() {
-
-  // this is all wrong.  need 2d correlation analysis
-  // https://en.wikipedia.org/wiki/Two-dimensional_correlation_analysis
-
-  // maybe we want to push this to a separate microcontroller, Sepal_Concordance
-  // alternately, each Arch can calculate their concordance clockwise (or ccw) and publish
-  // that
-
-  // normalize weights to sum to 1.0
-  static float vecWeight[N_FREQ_BINS] = {0.0};
-  // scale covariance terms
-  static float covTerm = 0.0;
-
-  // we can compute a few things once.
-  static float isInitialized = false;
-  if ( ! isInitialized ) {
-    float sumWeight = 0;
-    for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-      sumWeight += WeightFrequency[b];
-    }
-    for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-      vecWeight[b] = (float)WeightFrequency[b] / sumWeight;
-      covTerm += vecWeight[b] * vecWeight[b];
-    }
-    covTerm = 1.0 / (1.0 - covTerm);
-    isInitialized = true;
-  }
-
-  // weighted mean vector
-  float xBar[N_ARCH] = {0.0};
-  for ( byte j = 0; j < N_ARCH; j++ ) {
-    for ( byte i = 0; i < N_FREQ_BINS; i++ ) {
-      // this doesn't look quite right:
-      xBar[j] += vecWeight[j] * (float)sAF[myArch].freq.power[i][j];
-    }
-  }
-
-  // weighted covariance matrix
-  float Cov[N_ARCH][N_ARCH] = {0.0};
-  for ( byte a1 = 0; a1 < N_ARCH; a1++ ) {
-    for ( byte a2 = a1; a2 < N_ARCH; a2++ ) { // symmetry
-      float sum = 0.0;
-      for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-        sum += vecWeight[b] *
-               ((float)sAF[a1].freq[b] - xBar[a1]) *
-               ((float)sAF[a2].freq[b] - xBar[a2]);
-      }
-      Cov[a1][a2] = covTerm * sum;
-    }
-  }
-
-  // weighted correlation matrix
-  float Cor[N_ARCH][N_ARCH] = {0.0};
-  float Is[N_ARCH];
-  for ( byte a = 0; a < N_ARCH; a++ ) {
-    Is[a] = 1.0 / pow(Cov[a][a], 0.5);
-  }
-  for ( byte a1 = 0; a1 < N_ARCH; a1++ ) {
-    for ( byte a2 = a1; a2 < N_ARCH; a2++ ) { // symmetry
-      if ( a1 != a2 ) Cor[a1, a2] = Is[a1] * Cov[a1][a2] * Is[a2];
-    }
-  }
-
-  // save
-  switch ( myArch ) {
-    case 0: // A. B is next. C is prev.
-      concordNext = Cor[0, 1]; // corr.AB = mat.cor[1,2]
-      concordPrev = Cor[0, 2]; // corr.CA = mat.cor[1,3]
-      break;
-    case 1: // B. C is next. A is prev.
-      concordNext = Cor[1, 2]; // corr.BC = mat.cor[2,3]
-      concordPrev = Cor[0, 1]; // corr.AB = mat.cor[1,2]
-      break;
-    case 2: // C. A is next. B is prev.
-      concordNext = Cor[0, 2]; // corr.CA = mat.cor[1,3]
-      concordPrev = Cor[1, 2]; // corr.BC = mat.cor[2,3]
-      break;
-  }
-  concordTotal = (Cor[0, 1] + Cor[1, 2] + Cor[0, 2]) / 3.0;
-
+double mapd(double x, double in_min, double in_max, double out_min, double out_max) {
+    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
-*/

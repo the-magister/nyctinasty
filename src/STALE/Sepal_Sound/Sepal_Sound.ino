@@ -552,6 +552,7 @@ void online() {
   }
 }
 
+<<<<<<< HEAD:src/Sepal_Sound/Sepal_Sound.ino
 /*      
   // loop across arches
   for ( byte up = 0; up < N_ARCH; up++ ) {
@@ -570,6 +571,44 @@ void online() {
       for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
         for ( byte i = 0; i < N_SENSOR; i++ ) {
           sumSensors[j] += sAF[up].freq.power[i][j];
+=======
+// DANNE, this is the crucial part.  When we get distance and frequency information, how do those translate to sound?
+void normal(boolean isOnline) {
+  // what to do with the topics?
+  if ( isOnline ) {
+
+    // loop across arches
+    for ( byte up = 0; up < N_ARCH; up++ ) {
+      if ( sAF[up].hasUpdate ) {
+        // we have an update to frequency information in sAF[i].freq
+
+        // make some noise
+        // crappy
+        uint16_t avgPower[N_SENSOR] = {0};
+        // frequency power
+        uint16_t power[N_SENSOR][N_FREQ_BINS] = {{0.0}};
+
+        // do the boneheaded thing and sum up the bins across all sensors
+        uint32_t sumSensors[N_FREQ_BINS] = {0};
+        uint32_t maxSum = 0;
+        for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
+          for ( byte i = 0; i < N_SENSOR; i++ ) {
+            sumSensors[j] += sAF[up].freq.power[i][j];
+          }
+          if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
+        }
+
+        Serial << F("Arch ") << up << F(" ");
+        Serial << F("Freq bins: ");
+        // set the LEDs proportional to bins, normalized to maximum bin
+        for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
+          uint32_t value = map( sumSensors[j],
+                                (uint32_t)0, maxSum,
+                                (uint32_t)0, (uint32_t)255
+                              );
+          Serial << value << ",";
+          //    leftDown[j] = CHSV(archHue[myArch], archSat[myArch], brighten8_video(constrain(value, 0, 255)));
+>>>>>>> master:src/STALE/Sepal_Sound/Sepal_Sound.ino
         }
         if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
       }

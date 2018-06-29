@@ -1,0 +1,21 @@
+Notes,drop,P0,P1,P2,C01,C12,C20
+NOP,TRUE,F,F,F,F,F,F
+idle,FALSE,F,F,F,F,F,F
+alan goofing,TRUE,F,F,F,F,F,F
+restart,TRUE,F,F,F,F,F,F
+in arch0,FALSE,F,F,F,F,F,F
+standing arch0,FALSE,T,F,F,F,F,F
+moving arch0,FALSE,T,F,F,F,F,F
+milling around arch0,FALSE,T,F,F,F,F,F
+milling around arch0 and 2,FALSE,T,F,T,F,F,F
+milling around arch012,FALSE,T,T,T,F,F,F
+michael milling 0,FALSE,T,F,F,F,F,F
+michael milling arch1,FALSE,F,T,F,F,F,F
+michael milling arch2,FALSE,F,F,T,F,F,F
+c02,FALSE,T,F,T,F,F,T
+more difficult c02,FALSE,T,F,T,F,F,T
+c12,FALSE,F,T,T,F,T,F
+c012,FALSE,T,T,T,T,T,T
+diff c012,FALSE,T,T,T,T,T,T
+frenetic c012,FALSE,T,T,T,T,T,T
+coor02 not coor1,FALSE,T,T,T,F,F,T

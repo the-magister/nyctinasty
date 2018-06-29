@@ -2,36 +2,32 @@
 #define Nyctinasty_Messages_h
 
 #include <Arduino.h>
+	
+// number of Arches per Sepal
+#define N_ARCH 3
 
 // system states. probably want to implement a FSM on each uC to work with these.
 enum systemState {
 //	state		//	description
 	STARTUP=0,	//	all roles start here
 	
-	OFFLINE,	//	normal operation, but no messaging
-	ONLINE,		//	normal operation, but no messaging
-	SLAVED,		//	all activity dictated
-
-	REBOOT,		//  trigger to reboot  
-	REPROGRAM,	//  trigger to contact the webserver to pull a new binary 
-
-        IDLE,           // Initialized but no activity
-        INTRO,          // New participant has arrived after an IDLE state
-        C1,             // Low corresspondence
-        C2,             // Med corresspondence
-        C3,             // High corresspondence
-        WIN,            // Win animation
-       
+	LONELY,		// 0 players
+	OHAI,		// 1 players
+	GOODNUF,	// 2 players
+	GOODJOB,	// 3 players or 2 players coordinated
+	WINNING, 	// 3 players and 2 players coordinated
+	FANFARE,	// 3 players and 3 players coordinated 
+	
+	REBOOT,		//  trigger to reboot 
 	N_STATES	//	as a counter/max
 };
 
 // command structure
 typedef struct {
 	systemState state={STARTUP}; 
+	boolean isPlayer[N_ARCH] = {false}; // A0, A1, A2
+	boolean areCoordinated[N_ARCH] = {false}; // A0:A1, A1:A2, A2:A0
 } SystemCommand;
-	
-// number of Arches per Sepal
-#define N_ARCH 3
 
 // number of distance Sensors per Arch
 #define N_SENSOR 6
@@ -49,10 +45,10 @@ typedef struct {
 } SepalArchDistance;
 
 // FFT analysis of the distance data
-#define N_FREQ_SAMPLES (uint16_t)(1<<7)  // This value MUST ALWAYS be a power of 2
+#define N_FREQ_SAMPLES (uint16_t)(1<<8)  // This value MUST ALWAYS be a power of 2
 
 // time required for buffer fill
-#define FILL_TIME DISTANCE_SAMPLING_RATE*N_FREQ_SAMPLES // 1280 ms
+#define FILL_TIME DISTANCE_SAMPLING_RATE*N_FREQ_SAMPLES 
 
 // Nyquist limit; can't detect frequencies faster than this
 #define NYQUIST_LIMIT DISTANCE_SAMPLING_FREQ/2 // 50 Hz
@@ -72,24 +68,13 @@ typedef struct {
 	float peakFreq[N_SENSOR]={0};
 } SepalArchFrequency;
 
-// water works control
-enum pumpState {
-	// pretty self-explanatory.  these are useful when a HIGH pin state means OFF.
-	OFF,		// 0==LOW
-	ON			// 1==HIGH
-};
-enum routeState {
-	FOUNTAIN,	// 0==LOW
-	CANNON		// 1==HIGH
+// cannon trigger
+enum triggerState {
+	TRIGGER_OFF,		// 0==LOW
+	TRIGGER_ON			// 1==HIGH
 };
 typedef struct {
-	// state of the four pumps; with default
-	// pump pair with priming, so one of these must be on first
-	pumpState primePump[2] = {OFF, OFF};
-	// pump pair without priming
-	pumpState boostPump[2] = {OFF, OFF};
-	// state of the output; with default
-	routeState route = {FOUNTAIN};
-} WaterWorks;
+	triggerState state = TRIGGER_OFF;
+} CannonTrigger;
 
 #endif
