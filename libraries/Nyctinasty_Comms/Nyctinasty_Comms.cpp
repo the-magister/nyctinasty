@@ -114,7 +114,8 @@ void NyctComms::subscribe(CannonTrigger *storage, boolean *trueWithUpdate) {
 boolean NyctComms::publish(SystemCommand *storage) {
 	return publish(
 		settingsString, 
-		(uint8_t *)storage, (unsigned int)sizeof(SystemCommand)
+		(uint8_t *)storage, (unsigned int)sizeof(SystemCommand),
+		true
 	);
 }
 boolean NyctComms::publish(SimonSystemState *storage) {
@@ -289,7 +290,7 @@ void NyctComms::subscribe(String topic, void * storage, boolean * updateFlag, ui
 }
 
 // publish to a topic
-boolean NyctComms::publish(String topic, uint8_t * msg, unsigned int msgBytes) {
+boolean NyctComms::publish(String topic, uint8_t * msg, unsigned int msgBytes, boolean retained) {
 	// bit of an edge case, but let's check
 	if( msgBytes >= MQTT_MAX_PACKET_SIZE ) {
 		Serial << F("Increase PubSubClient.h MQTT_MAX_PACKET_SIZE >") << msgBytes << endl;;
@@ -301,7 +302,7 @@ boolean NyctComms::publish(String topic, uint8_t * msg, unsigned int msgBytes) {
 	// toggle the LED when we send a new message
 	toggleLED();
 	// ship it
-	return mqtt.publish(topic.c_str(), msg, msgBytes);
+	return mqtt.publish(topic.c_str(), msg, msgBytes, retained);
 }
 
 // connect to the WiFi

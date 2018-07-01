@@ -83,8 +83,10 @@ sAF_t sAF[N_ARCH];
 
 void setup() {
   // for local output
+  delay(500);
   Serial.begin(115200);
-
+  Serial.setTimeout(5); 
+  
   Serial << endl << endl << endl << F("Startup begins.") << endl;
 
   // configure comms
@@ -122,13 +124,15 @@ void lookForSerialCommands() {
       Serial << "State lock=" << stateLock << endl; 
       break;
     case 'P': {
-      byte player = constrain(Serial.parseInt(), 0, 2);
+      int foo = Serial.parseInt();
+      byte player = constrain(foo, 0, 2);
       sC.isPlayer[player] = !sC.isPlayer[player];
       sendSettings();
       break;
     }
     case 'C': {
-      byte pair = constrain(Serial.parseInt(), 0, 2);
+      int foo = Serial.parseInt();
+      byte pair = constrain(foo, 0, 2);
       sC.areCoordinated[pair] = !sC.areCoordinated[pair];
       // must have players if coordinated
       if( sC.areCoordinated[0] ) sC.isPlayer[0] = sC.isPlayer[1] = true;
@@ -412,7 +416,6 @@ boolean transitionLockoutExpired() {
 void genericStateEnter(systemState state) {
   resetTransitionLockout();
 
-  Serial << F("State change.");
   sC.state = state;
 
   sendSettings();
