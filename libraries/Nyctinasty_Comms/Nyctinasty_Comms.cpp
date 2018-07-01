@@ -27,6 +27,9 @@ void NyctComms::begin(NyctRole role) {
 		Serial << "Wifi already connected, disconnecting" << endl;
 		//WiFi.disconnect();  // Alan: maybe disconnect is unnecessary?
 		//delay(1000);  // Alan: added delay 
+		// Mike: this was added Back in the Day, as the ESP8266 will save WiFi info in 
+		//    NVRAM to speed up reboot.  Now that WiFi settings are stable, this may be
+		//    ok.  IF we see odd behavior about connecting, revisit.  
 	}
 	
 // variation in WiFi library calls btw ESP8266 and ESP32

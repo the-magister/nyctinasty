@@ -28,13 +28,10 @@
 // roles for each microcontroller
 enum NyctRole {
 	Coordinator=0,
-	Arch0,
-	Arch1,
-	Arch2,
+	Arch0, Arch1, Arch2,
 	Sound,
-	WaterRoute, 
-	WaterPrime,
-	WaterBoost,
+	WaterRoute, WaterPrime, WaterBoost,
+	Trigger,
 	Bridge,
   
 	N_ROLES
@@ -42,13 +39,10 @@ enum NyctRole {
 // helpful decodes for the humans.  must be unique.
 const String NyctRoleString[] = {
 	"Coordinator",
-	"Arch-0",
-	"Arch-1",
-	"Arch-2",
+	"Arch-0", "Arch-1", "Arch-2",
 	"Sound",
-	"Water-Route",
-	"Water-Prime",
-	"Water-Boost",
+	"Water-Route", "Water-Prime", "Water-Boost",
+	"Trigger",
 	"Bridge"
 };
 

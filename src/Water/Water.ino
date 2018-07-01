@@ -99,7 +99,7 @@ void loop() {
 
   // check for settings update
   if ( cT.hasUpdate ) {
-    Serial << "Cannon. state=" << cT.cannon.state << endl;
+    Serial << "Cannon. left=" << cT.cannon.left << " right=" << cT.cannon.right << endl;
     cT.hasUpdate = false;
   }
 
@@ -114,7 +114,10 @@ void loop() {
       case 'g': sC.settings.state = GOODJOB; sC.hasUpdate = true; break;
       case 'w': sC.settings.state = WINNING; sC.hasUpdate = true; break;
       case 'r': sC.settings.state = REBOOT; sC.hasUpdate = true; break;
-      case 't': cT.cannon.state = cT.cannon.state == TRIGGER_ON ? TRIGGER_OFF : TRIGGER_ON; cT.hasUpdate = true; break;
+      case 't': 
+        cT.cannon.left = cT.cannon.left == TRIGGER_ON ? TRIGGER_OFF : TRIGGER_ON; 
+        cT.cannon.right = cT.cannon.right == TRIGGER_ON ? TRIGGER_OFF : TRIGGER_ON; 
+        cT.hasUpdate = true; break;
       case '\n': break;
       case '\r': break;
       default:
@@ -128,7 +131,6 @@ void loop() {
 }
 
 void switchState(systemState state) {
-  Serial << F("State.  Changing to ") << state << endl;
   switch ( state ) {
     case STARTUP: stateMachine.transitionTo(Startup); break;
     case LONELY: stateMachine.transitionTo(Lonely); break;
@@ -136,10 +138,25 @@ void switchState(systemState state) {
     case GOODNUF: stateMachine.transitionTo(Goodnuf); break;
     case GOODJOB: stateMachine.transitionTo(Goodjob); break;
     case WINNING: stateMachine.transitionTo(Winning); break;
+    case FANFARE: stateMachine.transitionTo(Fanfare); break;
     case REBOOT: stateMachine.transitionTo(Reboot); break;
     default:
       Serial << F("ERROR!  unknown state.") << endl;
   }
+ Serial << F("State change. to=");
+  switch( state ) {
+    case STARTUP: Serial << "STARTUP"; break;  //  all roles start here
+  
+    case LONELY: Serial << "LONELY"; break;   // 0 players
+    case OHAI: Serial << "OHAI"; break;   // 1 players
+    case GOODNUF: Serial << "GOODNUF"; break;  // 2 players
+    case GOODJOB: Serial << "GOODJOB"; break;  // 3 players or 2 players coordinated
+    case WINNING: Serial << "WINNING"; break;  // 3 players and 2 players coordinated
+    case FANFARE: Serial << "FANFARE"; break;  // 3 players and 3 players coordinated 
+  
+    case REBOOT: Serial << "REBOOT"; break;   //  trigger to reboot 
+  }
+ Serial << endl;
 }
 
 void startup() {
@@ -200,15 +217,19 @@ void winning() {
   applyToHardware();
 }
 
-boolean duty(uint32_t secOn, uint32_t secOff) {
+boolean duty(uint32_t timeOn, uint32_t secOff) {
+  const uint32_t mult = 1000UL;
   static boolean state = false;
-  static Metro onTime(1000UL*secOn);
-  static Metro offTime(1000UL*secOff);
+  static Metro onTime(mult*timeOn);
+  static Metro offTime(mult*secOff);
 
   // is the trigger squeezed?
-  boolean trigger = cT.cannon.state == TRIGGER_ON;
+  boolean trigger = 
+    cT.cannon.left == TRIGGER_ON ||
+    cT.cannon.right == TRIGGER_ON
+  ;
   
-  if( !trigger || secOn==0 ) {
+  if( !trigger || timeOn==0 ) {
     state = false;
     return( state ); // that was easy
   }
@@ -218,12 +239,12 @@ boolean duty(uint32_t secOn, uint32_t secOff) {
   }
   
   byte lastOn, lastOff;
-  if( secOn != lastOn ) {
-    onTime.interval(secOn*1000UL);  
-    lastOn = secOn;
+  if( timeOn != lastOn ) {
+    onTime.interval(timeOn*mult);  
+    lastOn = timeOn;
   }
   if( secOff != lastOff ) {
-    offTime.interval(secOff*1000UL);  
+    offTime.interval(secOff*mult);  
     lastOff = secOff;
   }
 

@@ -25,6 +25,7 @@ enum systemState {
 // command structure
 typedef struct {
 	systemState state={STARTUP}; 
+	// the state defines the player and coordination count.  Now, which player/coordination?
 	boolean isPlayer[N_ARCH] = {false}; // A0, A1, A2
 	boolean areCoordinated[N_ARCH] = {false}; // A0:A1, A1:A2, A2:A0
 } SystemCommand;
@@ -70,11 +71,13 @@ typedef struct {
 
 // cannon trigger
 enum triggerState {
-	TRIGGER_OFF,		// 0==LOW
-	TRIGGER_ON			// 1==HIGH
+	TRIGGER_OFF=0,
+	TRIGGER_ON
 };
 typedef struct {
-	triggerState state = TRIGGER_OFF;
+	// left and right trigger buttons.
+	triggerState left = TRIGGER_OFF;
+	triggerState right = TRIGGER_OFF;
 } CannonTrigger;
 
 #endif
