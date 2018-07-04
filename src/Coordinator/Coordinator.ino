@@ -109,6 +109,8 @@ void setup() {
 void lookForSerialCommands() {
   if ( ! Serial.available() ) return;
 
+  static boolean trigger = false;
+  
   char c = Serial.read();
   switch (c) {
     case 's': stateMachine.transitionTo(Startup); break;
@@ -123,11 +125,20 @@ void lookForSerialCommands() {
       stateLock = ! stateLock; 
       Serial << "State lock=" << stateLock << endl; 
       break;
+    case 'T': {
+      trigger = !trigger;
+      CannonTrigger trig;
+      trig.left = trigger ? TRIGGER_ON : TRIGGER_OFF;
+      trig.right = trigger ? TRIGGER_ON : TRIGGER_OFF;
+      
+      comms.publish(&trig);
+      Serial << "Trigger=" << trigger << endl; 
+      break;
+    }
     case 'P': {
       int foo = Serial.parseInt();
       byte player = constrain(foo, 0, 2);
       sC.isPlayer[player] = !sC.isPlayer[player];
-      sendSettings();
       break;
     }
     case 'C': {
@@ -138,19 +149,19 @@ void lookForSerialCommands() {
       if( sC.areCoordinated[0] ) sC.isPlayer[0] = sC.isPlayer[1] = true;
       if( sC.areCoordinated[1] ) sC.isPlayer[1] = sC.isPlayer[2] = true;
       if( sC.areCoordinated[2] ) sC.isPlayer[2] = sC.isPlayer[0] = true;
-      sendSettings();
       break;
     }    
     case '\n': break;
     case '\r': break;
     default:
       Serial << F("(s)tartup, (l)onely, (o)hai, good(n)uf, (g)oodjob, (w)inning, (f)anfare, (r)eboot.") << endl;
-      Serial << F("(L)ock and unlock states.") << endl;
+      Serial << F("(L)ock and unlock states. (T)rigger cannon.") << endl;
       Serial << F("(P)(0-2) toggle player state: A0, A1, A2.") << endl;
       Serial << F("(C)(0-2) toggle player state: A0:A1, A1:A2, A2:A0.") << endl;
       break;
   }
 
+  sendSettings();
 }
 
 void loop() {
@@ -192,26 +203,26 @@ void loop() {
   }
 
   // otherwise, check stuff
-  if ( sAF[0].hasUpdate ) {
+  if ( sAD[0].hasUpdate ) {
     decidePlayerState(0);
     decideCoordination(0); // 0,1
     decideCoordination(2); // 2,0
 
-    sAF[0].hasUpdate = false;
+    sAD[0].hasUpdate = false;
   }
-  if ( sAF[1].hasUpdate ) {
+  if ( sAD[1].hasUpdate ) {
     decidePlayerState(1);
     decideCoordination(0); // 0,1
     decideCoordination(1); // 1,2
 
-    sAF[1].hasUpdate = false;
+    sAD[1].hasUpdate = false;
   }
-  if ( sAF[2].hasUpdate ) {
+  if ( sAD[2].hasUpdate ) {
     decidePlayerState(2);
     decideCoordination(2); // 2,0
     decideCoordination(0); // 0,1
 
-    sAF[2].hasUpdate = false;
+    sAD[2].hasUpdate = false;
   }
 
   // state machine
@@ -330,17 +341,22 @@ void fanfareUpdate() {
 // algorithm for player detection
 double detectPlayer(byte arch) {
   // compute mean
-  double meanAvgPower = 0;
-  for ( byte s = 0; s < N_SENSOR; s++ ) meanAvgPower += sAF[arch].freq.avgPower[s];
+  static double meanAvgPower = {75};
+  for ( byte s = 0; s < N_SENSOR; s++ ) meanAvgPower += sAD[arch].dist.prox[s];
   meanAvgPower /= (double)N_SENSOR;
 
-  return ( meanAvgPower );
+  // smooth
+  const double s = 10;
+  static double power[N_ARCH] = {75};
+  power[arch] = (power[arch] * (s - 1.0) + meanAvgPower) / s;
+
+  return ( power[arch] );
 }
 
 // watch the player state and also count the number of times in that same state (persistence)
 void decidePlayerState(byte arch) {
-  static double smoothedPower[N_ARCH] = {6528, 6528, 6528};
-  // should be 6528.
+  static double smoothedPower[N_ARCH] = {75, 75, 75};
+  // should be 75.
   const double s = 10;
 
   // current, immediate value
@@ -362,13 +378,14 @@ void decidePlayerState(byte arch) {
 }
 
 // algorithm for coordination detection
+double correlation_fast(uint16_t (&x)[N_SENSOR], uint16_t (&y)[N_SENSOR]);
 double isCoordinated(byte arch1, byte arch2) {
 
   // if there aren't players in these arches, then they can't be coordinated.
   if ( sC.isPlayer[arch1] == false || sC.isPlayer[arch2] == false ) return (0.0);
 
   // I didn't say it was an awesome algorithm; watch this space.
-  return ( 1.0 );
+  return( correlation_fast(sAD[arch1].dist.prox, sAD[arch2].dist.prox) );
 }
 
 void decideCoordination(byte pair) {
@@ -490,6 +507,36 @@ void sendSettings() {
    sAF[0].hasUpdate = sAF[1].hasUpdate = sAF[2].hasUpdate = false;
   }
 */
+
+double correlation_fast(uint16_t (&x)[N_SENSOR], uint16_t (&y)[N_SENSOR]) {
+
+  // sample size
+  const double n = N_SENSOR;
+
+  // loop over bins
+  double sumXY = 0;
+  double sumX = 0;
+  double sumY = 0;
+  double sumX2 = 0;
+  double sumY2 = 0;
+  for ( byte b = 0; b < (byte)n; b++ ) {
+    sumXY += x[b] * y[b];
+    sumX += x[b];
+    sumY += y[b];
+    sumX2 += x[b] * x[b];
+    sumY2 += y[b] * y[b];
+  }
+
+  double n1 = n * sumXY;
+  //  Serial << "n1 " << n1 << endl;
+  double n2 = sumX * sumY;
+  //  Serial << "n2 " << n2 << endl;
+  double d1 = sqrt(n * sumX2 - sumX * sumX);
+  //  Serial << "d1 " << d1 << endl;
+  double d2 = sqrt(n * sumY2 - sumY * sumY);
+  //  Serial << "d2 " << d2 << endl;
+  return ( (n1 - n2) / d1 / d2 );
+}
 
 
 double correlation_fast(double (&x)[N_FREQ_BINS], double (&y)[N_FREQ_BINS]) {

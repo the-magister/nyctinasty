@@ -34,8 +34,8 @@ typedef struct {
 #define N_SENSOR 6
 
 // distance data
-#define DISTANCE_SAMPLING_RATE 10UL // ms
-#define DISTANCE_SAMPLING_FREQ (1000UL/DISTANCE_SAMPLING_RATE) // 100 Hz
+#define DISTANCE_SAMPLING_RATE 30UL // ms
+#define DISTANCE_SAMPLING_FREQ (1000UL/DISTANCE_SAMPLING_RATE) // 33.33 Hz
 typedef struct {
 	// min and max range information
 	uint16_t min, max; // ADC limits

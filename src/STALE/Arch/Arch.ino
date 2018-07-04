@@ -6,6 +6,7 @@
 
 #include <Streaming.h>
 #include <Metro.h>
+#include <arduinoFFT.h>
 #include <SoftwareSerial.h>
 #include <SoftEasyTransfer.h>
 #include <FiniteStateMachine.h>
@@ -49,11 +50,12 @@ byte leftCoord, rightCoord;
 #define LEDS_DOWN 17
 #define LEDS_UP 13
 #define LEDS_DECK 4
+#define LEDS_PER_PIN LEDS_BAR+LEDS_DOWN
 
-CRGBArray<LEDS_BAR+LEDS_DOWN> leftBack;
-CRGBArray<LEDS_BAR+LEDS_DOWN> rightBack;
-CRGBArray<LEDS_BAR+LEDS_UP+LEDS_DECK> leftFront;
-CRGBArray<LEDS_BAR+LEDS_UP+LEDS_DECK> rightFront;
+CRGBArray<LEDS_PER_PIN> leftBack;
+CRGBArray<LEDS_PER_PIN> rightBack;
+CRGBArray<LEDS_PER_PIN> leftFront;
+CRGBArray<LEDS_PER_PIN> rightFront;
 
 // bars
 CRGBSet rightBar1 = rightBack(0, LEDS_BAR-1);
@@ -62,14 +64,14 @@ CRGBSet leftBar1 = leftBack(0, LEDS_BAR-1);
 CRGBSet leftBar2 = leftFront(0, LEDS_BAR-1);
 
 // verticals
-CRGBSet leftUp = leftFront(LEDS_BAR, LEDS_BAR+LEDS_UP-1);
-CRGBSet rightUp = rightFront(LEDS_BAR, LEDS_BAR+LEDS_UP-1);
-CRGBSet leftDown = leftBack(LEDS_BAR, LEDS_BAR+LEDS_DOWN-1);
-CRGBSet rightDown = rightBack(LEDS_BAR, LEDS_BAR+LEDS_DOWN-1);
+CRGBSet leftUp = leftFront(LEDS_BAR, LEDS_UP-1);
+CRGBSet rightUp = rightFront(LEDS_BAR, LEDS_UP-1);
+CRGBSet leftDown = leftBack(LEDS_BAR, LEDS_DOWN-1);
+CRGBSet rightDown = rightBack(LEDS_BAR, LEDS_DOWN-1);
 
 // deck lights under rail
-CRGBSet leftDeck = leftFront(LEDS_BAR+LEDS_UP, LEDS_BAR+LEDS_UP+LEDS_DECK-1);
-CRGBSet rightDeck = rightFront(LEDS_BAR+LEDS_UP, LEDS_BAR+LEDS_UP+LEDS_DECK-1);
+CRGBSet leftDeck = leftUp(LEDS_BAR+LEDS_UP, LEDS_PER_PIN-1);
+CRGBSet rightDeck = rightUp(LEDS_BAR+LEDS_UP, LEDS_PER_PIN-1);
 
 // color choices, based on arch information
 const CHSV archColor[N_ARCH] = {
@@ -102,7 +104,24 @@ struct sC_t {
 } sC;
 
 // our distance updates send as this structure as this topic
+const uint32_t distancePublishRate = 1000UL/15UL; // ms
 SepalArchDistance dist;
+
+// our frequency updates send as this structure as this topic
+// other frequency updates receive as this structure as this topic
+typedef struct {
+  boolean hasUpdate = false;
+  SepalArchFrequency freq;
+} sAF_t;
+sAF_t sAF[N_ARCH];
+
+// FFT object
+uint16_t buffer[N_SENSOR][N_FREQ_SAMPLES];
+boolean bufferReady = false;
+arduinoFFT FFT = arduinoFFT();
+
+// computed correspondence [-1,+1] between arches.
+float concordTotal, concordNext, concordPrev;
 
 // talk to the ADC device
 SoftwareSerial mySerial(RX, TX, false, 1024);
@@ -125,10 +144,10 @@ void setup() {
 
   // LEDs
   Serial << F("Configure leds...");
-  FastLED.addLeds<WS2811, D5, COLOR_ORDER>(leftBack, leftBack.size()).setCorrection(COLOR_CORRECTION);
-  FastLED.addLeds<WS2811, D6, COLOR_ORDER>(rightBack, rightBack.size()).setCorrection(COLOR_CORRECTION);
-  FastLED.addLeds<WS2811, D7, COLOR_ORDER>(leftFront, leftFront.size()).setCorrection(COLOR_CORRECTION);
-  FastLED.addLeds<WS2811, D8, COLOR_ORDER>(rightFront, rightFront.size()).setCorrection(COLOR_CORRECTION);
+  FastLED.addLeds<WS2811, D5, COLOR_ORDER>(leftBack, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
+  FastLED.addLeds<WS2811, D6, COLOR_ORDER>(rightBack, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
+  FastLED.addLeds<WS2811, D7, COLOR_ORDER>(leftFront, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
+  FastLED.addLeds<WS2811, D8, COLOR_ORDER>(rightFront, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
   FastLED.setBrightness(255);
   Serial << F(" done.") << endl;
 
@@ -157,9 +176,17 @@ void setup() {
   
   // subscribe
   comms.subscribe(&sC.settings, &sC.hasUpdate);
+  for ( byte a = 0; a < N_ARCH; a++ ) {
+    // no need to subscribe to our own message
+    if ( a != myArch ) comms.subscribe(&sAF[a].freq, &sAF[a].hasUpdate, a);
+  }
 
   Serial << F("DISTANCE_SAMPLING_RATE, ms: ") << DISTANCE_SAMPLING_RATE << endl;
   Serial << F("DISTANCE_SAMPLING_FREQ, Hz: ") << DISTANCE_SAMPLING_FREQ << endl;
+  Serial << F("N_FREQ_SAMPLES, #: ") << N_FREQ_SAMPLES << endl;
+  Serial << F("FILL_TIME, ms: ") << FILL_TIME << endl;
+  Serial << F("Lowest Freq Bin, Hz: ") << (float)(0+1)*(float)DISTANCE_SAMPLING_FREQ/(float)N_FREQ_SAMPLES << endl;
+  Serial << F("Highest Freq Bin, Hz: ") << (float)(N_FREQ_BINS+1)*(float)DISTANCE_SAMPLING_FREQ/(float)N_FREQ_SAMPLES << endl;
 
   Serial << F("Startup complete.") << endl;
 }
@@ -167,6 +194,17 @@ void setup() {
 void loop() {
   // comms handling
   comms.update();
+
+/*
+  // after 5 seconds, transition to Offline, but we could easily get directed to Online before that.
+  static Metro cycleTimeout(5000UL);
+  if( cycleTimeout.check() ) {
+    sC.settings.state = (systemState)((int)sC.settings.state+1);
+    if( sC.settings.state == REBOOT ) sC.settings.state = STARTUP;
+    sC.hasUpdate = true;
+    cycleTimeout.reset();
+  }
+*/
 
   // check for settings update
   if ( sC.hasUpdate ) {
@@ -372,11 +410,33 @@ void updateSensors() {
  *  WiFi packets.
  *
  */
+ 
+ static uint32_t counter = 0;
+  static boolean publishReady = false;
+  static byte fftIndex = 0;
+  static Metro pushDistanceInterval(distancePublishRate);
 
-  static Metro distanceUpdate(DISTANCE_SAMPLING_RATE);
+  // do FFT in segements when the buffer is ready
+  if ( bufferReady ) {
+    // compute
+    computeFFT(fftIndex);
+
+    // next sensor
+    fftIndex++;
+
+    // are we done?
+    if ( fftIndex >= N_SENSOR ) {
+      fftIndex = 0;
+      bufferReady = false;
+      publishReady = true;
+    }
+  }
+
+  // check to see if we need to pull new distance data.
+  // toggled TX pin
   static boolean pinState = false;
-  static uint32_t counter = 0;
-  
+  static Metro distanceUpdate(DISTANCE_SAMPLING_RATE);
+
   if ( distanceUpdate.check() ) {
     distanceUpdate.reset();
     pinState = !pinState;
@@ -388,11 +448,24 @@ void updateSensors() {
     // just tracking actual distance update rate
     counter ++;
 
+    // fill buffer
+    fillBuffer();
+
     // update bar lights
     updateBarByDistance();
 
-    // publish distance
-    comms.publish(&dist, myArch);
+    // I don't actually know if sending via WiFi will disrupt SoftwareSerial; worth a look.
+    if ( publishReady ) {
+      publishReady = false;
+      // publish
+      comms.publish(&sAF[myArch].freq, myArch);
+      // flag that our frequency data are ready
+      sAF[myArch].hasUpdate = true;
+    } else if( pushDistanceInterval.check() ) {
+      // publish distance
+      comms.publish(&dist, myArch);
+      pushDistanceInterval.reset();
+    }
 
     // we need to update the LEDs now while we won't screw up SoftwareSerial and WiFi
     pushToHardware();
@@ -437,6 +510,83 @@ void updateBarByDistance() {
   rightBack[2] = rightFront[2] = bar[5];
 }
 
+// adjust lights on the down/legs with frequency readings
+void updateLegsByFrequency() {
+  // crappy
+  uint16_t avgPower[N_SENSOR] = {0};
+  // frequency power
+  uint16_t power[N_SENSOR][N_FREQ_BINS] = {{0.0}};
+
+  // do the boneheaded thing and sum up the bins across all sensors
+  uint32_t sumSensors[N_FREQ_BINS] = {0};
+  uint32_t maxSum = 0;
+  for ( uint16_t b = 0; b < N_FREQ_BINS ; b++ ) {
+    for ( byte s = 0; s < N_SENSOR; s++ ) {
+      sumSensors[b] += sAF[myArch].freq.power[s][b];
+    }
+    if ( sumSensors[b] > maxSum ) maxSum = sumSensors[b];
+  }
+
+  Serial << F("Freq bins: ");
+  // set the LEDs proportional to bins, normalized to maximum bin
+  for ( uint16_t b = 0; b < N_FREQ_BINS ; b++ ) {
+    uint32_t value = map( sumSensors[b],
+                          (uint32_t)0, maxSum,
+                          (uint32_t)0, (uint32_t)255
+                        );
+    Serial << value << ",";
+    leftDown[b] = CHSV(archColor[myArch].hue, archColor[myArch].sat, brighten8_video(constrain(value, 0, 255)));
+  }
+  Serial << endl;
+
+  rightDown = leftDown;
+}
+
+// adjust lights on down/legs with peak frequency readings
+void updateLegsByPeakFreq() {
+
+  // some constants
+  // maximum possible frequency bin
+  const byte maxFreq = ceil( (N_FREQ_BINS+1)*DISTANCE_SAMPLING_FREQ/N_FREQ_SAMPLES );
+  const byte minFreq = floor( (0+1)*DISTANCE_SAMPLING_FREQ/N_FREQ_SAMPLES );
+  const byte fadeEachUpdate = 128;
+  
+  // fade lighting
+  leftDown.fadeToBlackBy( fadeEachUpdate );
+
+  // loop across each arch's information
+  for( byte a=0; a<N_ARCH; a++ ) {
+    // loop across each sensor
+    for( byte s=0; s<N_SENSOR; s++ ) {
+      // get the integer frequency above and below
+      byte roundUp = ceil(sAF[a].freq.peakFreq[s]);
+      byte roundDown = floor(sAF[a].freq.peakFreq[s]);
+      
+      // map to lighting position
+      byte lightUp = map(roundUp, minFreq, maxFreq, 0, LEDS_UP-1);
+      byte lightDown = map(roundDown, minFreq, maxFreq, 0, LEDS_DOWN-1);
+      
+      // pick a color; my color is the brightest.
+      byte bright = 128;
+      if( a == myArch ) bright = 255;
+      CHSV color = CHSV(archColor[a].hue, 255, bright );
+
+      // apply
+      leftDown[lightUp] += color;
+      leftDown[lightDown] += color;
+    }
+    
+  }
+
+  // What immortal hand or eye / Could frame thy fearful symmetry?
+  rightDown = leftDown;
+}
+
+// update lights on the up/overhead with concordance readings
+void updateTopsByConcordance() {
+  // NOP
+}
+
 // show
 void pushToHardware() {
   FastLED.show();
@@ -446,6 +596,148 @@ void pushToHardware() {
     uint16_t reportedFPS = FastLED.getFPS();
     Serial << F("FastLED reported FPS, Hz=") << reportedFPS << endl;
   }
+}
+
+// storage
+void fillBuffer() {
+  // track the buffer index
+  static uint16_t index = 0;
+
+  // push to buffer
+  for ( byte i = 0; i < N_SENSOR; i++ ) buffer[i][index] = dist.prox[i];
+
+  // increment buffer index
+  index++;
+
+  if ( index >= N_FREQ_SAMPLES ) {
+    index = 0;
+    bufferReady = true;
+  }
+}
+
+// show sensor readings
+void dumpBuffer(uint16_t count) {
+  const char sep = ',';
+
+  for ( uint16_t j = 0; j < N_FREQ_SAMPLES; j++) {
+    for ( uint16_t i = 0; i < N_SENSOR; i++ ) {
+      Serial << (uint16_t)buffer[i][j] << sep;
+    }
+    Serial << count << endl;
+  }
+  count ++;
+}
+
+// frequency calculations readings
+void dumpFFT() {
+  const char sep = ',';
+  unsigned long now = millis();
+
+  for ( uint16_t i = 0; i < N_SENSOR; i++ ) {
+    Serial << now << sep << i << sep << sAF[myArch].freq.avgPower[i];
+    for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
+      Serial << sep << sAF[myArch].freq.power[i][j];
+    }
+    Serial << endl;
+  }
+}
+
+
+// https://cdn-learn.adafruit.com/downloads/pdf/fft-fun-with-fourier-transforms.pdf
+// Nyquist's Sampling Theorem: only frequencies up to half the sampling rate can
+// can be detected.  So, for 33 fps (Hz) we can detect signals no faster than 33/2 Hz.
+/*
+  Finally, the output of the FFT on real data has a few interesting properties:
+    The very first bin (bin zero) of the FFT output represents the average power of the signal.
+  Be careful not to try interpreting this bin as an actual frequency value!
+   Only the first half of the output bins represent usable frequency values. This means the
+  range of the output frequencies detected by the FFT is half of the sample rate. Don't try to
+  interpret bins beyond the first half in the FFT output as they won't represent real frequency
+  values!
+*/
+double imag[N_FREQ_SAMPLES];
+double real[N_FREQ_SAMPLES];
+#define SCL_INDEX 0x00
+#define SCL_TIME 0x01
+#define SCL_FREQUENCY 0x02
+void computeFFT(byte index) {
+  // track time
+  unsigned long tic = millis();
+
+  // crunch the buffer; expensive
+  const uint8_t exponent = FFT.Exponent(N_FREQ_SAMPLES); // can precompute to save a little time.
+
+  // storage.  fft computations alter the buffer, so we copy
+  for ( uint16_t j = 0; j < N_FREQ_SAMPLES ; j++ ) {
+    real[j] = (double)buffer[index][j];
+    imag[j] = 0.0;
+  }
+
+  // weigh data
+  FFT.Windowing(real, N_FREQ_SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);  /* Weigh data */
+  //    Serial.println("Weighed data:"); PrintVector(real, N_FREQ_SAMPLES, SCL_TIME);
+
+  // compute FFT
+  FFT.Compute(real, imag, N_FREQ_SAMPLES, exponent, FFT_FORWARD); /* Compute FFT */
+  //    Serial.println("Computed Real values:"); PrintVector(real, N_FREQ_SAMPLES, SCL_INDEX);
+  //    Serial.println("Computed Imaginary values:"); PrintVector(imag, N_FREQ_SAMPLES, SCL_INDEX);
+
+  // compute magnitudes
+//  FFT.ComplexToMagnitude(real, imag, N_FREQ_SAMPLES); /* Compute magnitudes */
+  // stealing a march here, as we don't need the magnitude information for the latter
+  // half of the array
+  FFT.ComplexToMagnitude(real, imag, N_FREQ_BINS + 2); /* Compute magnitudes */
+//  Serial.println("Computed magnitudes:");  PrintVector(real, (N_FREQ_SAMPLES >> 1), SCL_FREQUENCY);
+
+  // find major frequency peak
+  double peakFreq = FFT.MajorPeak(real, N_FREQ_SAMPLES, DISTANCE_SAMPLING_FREQ);
+//  if( index==5 ) Serial << F("Peak: ") << x << endl;
+  
+  // store power magnitudes of the lowest N_FREQ_BINS in the spectra
+  sAF[myArch].freq.avgPower[index] = (uint16_t)real[0];
+  for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) sAF[myArch].freq.power[index][j] = (uint16_t)real[j + 1];
+
+  // store peak frequency
+  sAF[myArch].freq.peakFreq[index] = (float)peakFreq;
+  
+/*
+  unsigned long dur = (millis() - tic);
+  if ( index == 0 ) {
+    Serial << F("Last FFT complete.");
+    Serial << F(" duration=") << dur;
+    Serial << F(" ms.") << endl;
+  }
+  */
+}
+void PrintVector(double *vData, uint16_t bufferSize, uint8_t scaleType) {
+  for (uint16_t i = 0; i < bufferSize; i++)   {
+    double abscissa;
+    /* Print abscissa value */
+    switch (scaleType)
+    {
+      case SCL_INDEX:
+        abscissa = (i * 1.0);
+        break;
+      case SCL_TIME:
+        abscissa = ((i * 1.0) / DISTANCE_SAMPLING_FREQ);
+        break;
+      case SCL_FREQUENCY:
+        abscissa = ((i * 1.0 * DISTANCE_SAMPLING_FREQ) / (double)N_FREQ_SAMPLES);
+        break;
+    }
+    Serial.print(abscissa, 6);
+    Serial.print(" ");
+    Serial.print(vData[i], 4);
+    Serial.println();
+
+    // Only the first half of the output bins represent usable frequency values.
+    if ( scaleType == SCL_FREQUENCY && i >= (bufferSize / 2 - 1) ) return;
+  }
+  Serial.println();
+}
+
+double mapd(double x, double in_min, double in_max, double out_min, double out_max) {
+    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
 
