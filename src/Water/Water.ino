@@ -37,6 +37,7 @@ void ohai(); State Ohai = State(ohai);
 void goodnuf(); State Goodnuf = State(goodnuf);
 void goodjob(); State Goodjob = State(goodjob);
 void winning(); State Winning = State(winning);
+void fanfare(); State Fanfare = State(fanfare);
 void reboot() { comms.reboot(); }; State Reboot = State(reboot);
 FSM stateMachine = FSM(Startup); // initialize state machine
 
@@ -178,7 +179,7 @@ Winning    2           2
 
 void lonely() {
   switch (myRole) {
-    case WaterRoute:  pinState[0] = duty(0,1);  pinState[1] = ON;   break;
+    case WaterRoute:  pinState[0] = duty(0,1);  pinState[1] = OFF;   break;
     case WaterPrime:  pinState[0] = OFF;  pinState[1] = OFF;  break;
     case WaterBoost:  pinState[0] = OFF;  pinState[1] = OFF;  break;
   }
@@ -186,7 +187,7 @@ void lonely() {
 }
 void ohai() {
   switch (myRole) {
-    case WaterRoute:  pinState[0] = duty(0,1);  pinState[1] = ON;   break;
+    case WaterRoute:  pinState[0] = duty(0,1);  pinState[1] = OFF;   break;
     case WaterPrime:  pinState[0] = ON;   pinState[1] = OFF;  break;
     case WaterBoost:  pinState[0] = OFF;  pinState[1] = OFF;  break;
   }
@@ -202,7 +203,7 @@ void goodnuf() {
 }
 void goodjob() {
   switch (myRole) {
-    case WaterRoute:  pinState[0] = duty(3,2);  pinState[1] = OFF;  break;
+    case WaterRoute:  pinState[0] = duty(3,2);  pinState[1] = ON;  break;
     case WaterPrime:  pinState[0] = ON;   pinState[1] = ON;  break;
     case WaterBoost:  pinState[0] = ON;   pinState[1] = OFF;  break;
   }
@@ -210,15 +211,19 @@ void goodjob() {
 }
 void winning() {
   switch (myRole) {
-    case WaterRoute:  pinState[0] = duty(10,0);  pinState[1] = OFF;  break;
+    case WaterRoute:  pinState[0] = duty(10,0);  pinState[1] = ON;  break;
     case WaterPrime:  pinState[0] = ON;   pinState[1] = ON;  break;
     case WaterBoost:  pinState[0] = ON;   pinState[1] = ON;  break;
   }
   applyToHardware();
 }
 
+void fanfare() {
+  winning();
+}
+
 boolean duty(uint32_t timeOn, uint32_t secOff) {
-  const uint32_t mult = 1000UL;
+  const uint32_t mult = 100UL;
   static boolean state = false;
   static Metro onTime(mult*timeOn);
   static Metro offTime(mult*secOff);

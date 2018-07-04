@@ -95,7 +95,7 @@ private:
 	void connectServices(String broker="192.168.4.1", word port=1883, uint32_t interval=500UL);	
 //	void connectServices(String broker="broker", word port=1883, uint32_t interval=500UL);
 	void subscribe(String topic, void * storage, boolean * updateFlag, uint8_t QoS);
-	boolean publish(String topic, uint8_t * msg, unsigned int msgBytes);
+	boolean publish(String topic, uint8_t * msg, unsigned int msgBytes, boolean retained=false);
 	
 };
 
