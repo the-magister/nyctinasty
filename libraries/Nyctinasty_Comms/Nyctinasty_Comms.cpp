@@ -317,9 +317,10 @@ void NyctComms::connectWiFi(String ssid, String pwd, uint32_t interval) {
 		toggleLED();
 
 		
-		Serial << F("WiFi status=") << WiFi.status();
-		Serial << F(" Retry #") << retryCount;
-		Serial << F(" Attempting WiFi connection to ") << ssid << F(" password ") << pwd<< endl;
+		// Alan: removed for debug do not check in
+//Serial << F("WiFi status=") << WiFi.status();
+		//Serial << F(" Retry #") << retryCount;
+		//Serial << F(" Attempting WiFi connection to ") << ssid << F(" password ") << pwd<< endl;
 
 		// Attempt to connect
 		WiFi.begin(ssid.c_str(), pwd.c_str());

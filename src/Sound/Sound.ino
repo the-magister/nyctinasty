@@ -34,17 +34,14 @@ NyctComms comms;
 
 // define a state for every systemState
 void startup(); State Startup = State(startup);
-//void offline(); State Offline = State(offline);
-//void online(); State Online = State(online);
-//void slaved(); State Slaved = State(slaved);
 
 // Gameplay states
-void lonelyEnter(); void lonely(); void lonelyExit(); State Lonely = State(lonelyEnter,lonely,lonelyExit);
-void ohaiEnter(); void ohaiExit(); State Ohai = State(ohaiEnter,NULL,ohaiExit);
-void goodnuf();  State Goodnuf = State(goodnuf);
-void goodjob();  State Goodjob = State(goodjob);
-void winning();  State Winning = State(winning);
-void fanfare(); State Fanfare = State(fanfare);
+void lonelyEnter(); void lonely(); void lonelyExit(); State Lonely = State(((byte)LONELY),lonelyEnter,lonely,lonelyExit);
+void ohaiEnter(); void ohai(); void ohaiExit(); State Ohai = State(((byte)OHAI),ohaiEnter,ohai,ohaiExit);
+void goodnufEnter();  void goodnuf();  void goodnufExit(); State Goodnuf = State((byte)GOODNUF,goodnufEnter,goodnuf,goodnufExit);
+void goodjobEnter(); void goodjob(); void goodjobExit();  State Goodjob = State((byte)GOODJOB,goodjobEnter,goodjob,goodjobExit);
+void winningEnter(); void winning(); void winningExit(); State Winning = State((byte)WINNING,winningEnter,winning,winningExit);
+void fanfareEnter(); void fanfare(); void fanfareExit(); State Fanfare = State((byte)FANFARE,fanfareEnter,fanfare,fanfareExit);
 
 // Sounds
 #define LONELY_START 100
@@ -53,20 +50,46 @@ void fanfare(); State Fanfare = State(fanfare);
 #define GOODJOB_START 500
 #define WINNING_START 600
 #define FANFARE_START 300
+#define BEAT_START 700
+#define POS_CHANGE_START 800
+#define NEG_CHANGE_START 900
+#define GUNFIRE_START 950
+#define PALETTE_START 1000  // Palettes are 6 track blocks of related sounds(ohai,goodnuf,goodjob,winning,.pos change,neg change)
 
 #define LONELY_NUM 8
 #define OHAI_NUM 4
+#define FANFARE_NUM 4
 #define GOODNUF_NUM 1
 #define GOODJOB_NUM 1
 #define WINNING_NUM 1
-#define FANFARE_NUM 4
+#define BEAT_NUM 6
+#define POS_CHANGE_NUM 7
+#define NEG_CHANGE_NUM 7
+#define GUNFIRE_NUM 1
+#define PALETTE_NUM 0
 
-#define LONELY_PLAY_SPACING 20000l
+int COOR_START[(byte)N_STATES] = {0,0,OHAI_START,GOODNUF_START,GOODJOB_START,WINNING_START};
+int COOR_NUM[(byte)N_STATES] = {0,0,OHAI_NUM,GOODNUF_NUM,GOODJOB_NUM,WINNING_NUM};
+
+State & lastState = Startup;
+int beatTrack;
+int corrTrack[N_STATES] = {-1,-1,-1,-1,-1,-1};
+int lonelyTrack = -1;
+int fanefareTrack = -1;
+int corrChangedTrack = -1;
+int cannonTrack = -1;
+
+#define LONELY_PLAY_SPACING 30000l
+#define BEAT_CHANGE_SPACING 60000l
 
 Metro lonelyTimer(1UL);
 Metro ohaiLockoutTimer(1UL);
+Metro beatChangeTimer(1UL);
+Metro coorTimer(2000UL);
 
 
+#define SINGLE_TRACK_DB -5
+#define TWO_TRACKS_DB -10
 
 void reboot() {
   comms.reboot();
@@ -96,17 +119,18 @@ typedef struct {
 } sAF_t;
 sAF_t sAF[N_ARCH];
 
-// there will be a correspondence structure getting sent.  just don't know what it is, yet.
+struct cT_t {
+  boolean hasUpdate = false;
+  CannonTrigger cannon;
+} cT;
 
 // Our Tsunami object
 Tsunami tsunami;
 
 // some tracks to mess with
-const int BOOTS = 17;
-const int SPARKLE = 18;
-const int CATS = 19;
-
 long lastActivity = 0;  // Last time we detected movement
+
+
 
 void setup() {
   // for local output
@@ -139,6 +163,8 @@ void setup() {
 
   // subscribe
   comms.subscribe(&sC.settings, &sC.hasUpdate);
+  comms.subscribe(&cT.cannon, &cT.hasUpdate);
+
   for ( byte i = 0; i < N_ARCH; i++ ) {
     Serial.printf("Subscribe to arch: %d\n",i);
     // subscribe to frequency and distance messages
@@ -147,26 +173,17 @@ void setup() {
   }
 
   Serial << F("Setup complete. Wait for subscriptions") << endl;
-/*
-  long start = millis();
-  while(millis() - start < 5000) {
-    delay(10);
-    comms.update();
-  }
-*/
+
   Serial << "Done with Setup" << endl;
   // Allow time for subscriptions to land
   //delay(5000);  // Not sure if this is really necessary but we dont always connect 
 
-/*
-  // run through some calculations to explain what's in the SepalArchFrequency data item.
-  Serial << F("Actual frequencies in each power bin:") << endl;
-  for(byte j=0; j<N_FREQ_BINS; j++) {
-    Serial << F("Bin=") << j;
-    Serial << F("\tFreq=") << ((float)j+1.0)*(float)DISTANCE_SAMPLING_FREQ/(float)N_FREQ_SAMPLES;
-    Serial << endl;
-  }
-*/
+  corrTrack[0] = -1;
+  corrTrack[1] = -1;
+  corrTrack[2] = -1;
+  corrTrack[4] = -1;
+  corrTrack[5] = -1;
+  corrTrack[6] = -1;
 }
 
 void loop() {
@@ -177,6 +194,7 @@ void loop() {
 
   // check for settings update
   if ( sC.hasUpdate ) {
+    // TODO: Turned off for local testing
     switchState(sC.settings.state);
     sC.hasUpdate = false;
   }
@@ -185,18 +203,22 @@ void loop() {
   stateMachine.update();
 
   //mimicController();  // Uncomment to mimic the controller
-  //testStates();  // Uncomment to run through all the states
-  
+  //testStates();  // Uncomment to run through all the states. Comment out switchState call above
+
+  updateBeat();  // Periodically change the beat while playing
+
+  updateCannon();
   // TODO: Add small delay here to allow interrupts to fire?
   delay(1);
 }
 
 void switchState(systemState state) {
   Serial << F("State.  Changing to ");
+
+  lastState = stateMachine.getCurrentState();
+
   switch ( state ) {
     case STARTUP: Serial << "Startup" << endl; stateMachine.transitionTo(Startup); break;
-    //case OFFLINE: stateMachine.transitionTo(Offline); break;
-    //case ONLINE: stateMachine.transitionTo(Online); break;
     //case SLAVED: stateMachine.transitionTo(Slaved); break;
     //case REBOOT: stateMachine.transitionTo(Reboot); break;
     //case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
@@ -210,6 +232,7 @@ void switchState(systemState state) {
     default:
       Serial << F("ERROR!  unknown state.") << endl;
   }
+
 }
 
 // Test states by running through each
@@ -218,40 +241,52 @@ void testStates() {
 
   if (!stateChange.check()) return;
 
-  Serial << "Changing test state" << endl;
+  //lastState = stateMachine.getCurrentState();  
   
   if (stateMachine.isInState(Startup)) {
+    lastState = Startup;
+    Serial << "Changing test state" << " lastState: " << convStateToEnum(lastState) << endl;
     Serial << "Changing to Lonely" << endl;
     stateMachine.transitionTo(Lonely);
   }
   
   if (stateMachine.isInState(Lonely)) {
-    Serial << "Changing to OHAI" << endl;
+    lastState = Lonely;
+    Serial << "Changing test state" << " lastState: " << convStateToEnum(lastState) << endl;
+    Serial << "Changing to Ohai" << endl;
     stateMachine.transitionTo(Ohai);
   }
 
   if (stateMachine.isInState(Ohai)) {
-    Serial << "Changing to GOODNUF" << endl;
+    lastState = Ohai;
+    Serial << "Changing test state" << " lastState: " << convStateToEnum(lastState) << endl;
+    Serial << "Changing to Goodnuf" << endl;
     stateMachine.transitionTo(Goodnuf);
   }
 
   if (stateMachine.isInState(Goodnuf)) {
+    lastState = Goodnuf;
+    Serial << "Changing test state" << " lastState: " << convStateToEnum(lastState) << endl;
     Serial << "Changing to GoodJob" << endl;
     stateMachine.transitionTo(Goodjob);
   }
 
   if (stateMachine.isInState(Goodjob)) {
+    lastState = Goodjob;
+    
+    Serial << "Changing test state" << " lastState: " << convStateToEnum(lastState) << endl;
     Serial << "Changing to Winning" << endl;
     stateMachine.transitionTo(Winning);
   }
 
   if (stateMachine.isInState(Winning)) {
+    lastState = Winning;
     Serial << "Changing to Fanfare" << endl;
     stateMachine.transitionTo(Fanfare);
   }
 
   if (stateMachine.isInState(Fanfare)) {
-    Serial << "Changing to Idle" << endl;
+    Serial << "Changing to Lonely" << endl;
     stateMachine.transitionTo(Lonely);
   }
 
@@ -263,6 +298,7 @@ void mimicController() {
   static Metro ohaiTimeout(4500UL);
   static Metro corrTimeout(30000UL);
   static Metro fanfareTimeout(30000UL);
+  
   /*
   if (stateMachine.isInState(Online)) {
     if (checkForLonely()) {
@@ -386,15 +422,133 @@ boolean checkForLonely() {
   return true;
 }
 
+void updateCannon() {
+  if ( cT.hasUpdate ) {
+    Serial << "Cannon. left=" << cT.cannon.left << " right=" << cT.cannon.right << endl;
+    if (cT.cannon.left || cT.cannon.right) {
+      if (cannonTrack != -1 && !tsunami.isTrackPlaying(cannonTrack)) {
+        tsunami.trackGain(cannonTrack,TWO_TRACKS_DB);   
+        tsunami.trackPlayPoly(cannonTrack, 0, true);   
+        tsunami.trackLoop(cannonTrack,true);   
+      } 
+    }else {
+      if (cannonTrack != -1) {
+        tsunami.trackStop(cannonTrack);
+        cannonTrack = -1;        
+      }
+    }
+    cT.hasUpdate = false;
+  }
+}
+  
+void updateBeat() {
+    if (!beatChangeTimer.check()) return;
+    
+    if (stateMachine.isInState(Ohai) || stateMachine.isInState(Goodnuf) || stateMachine.isInState(Goodjob) || stateMachine.isInState(Winning)) {
+      // Were playing, lets change the beat
+      playNewBeat();
+      beatChangeTimer.interval(BEAT_CHANGE_SPACING);
+      beatChangeTimer.reset();  
+    }
+}
 
-int lonelyTrack;
+void playNewBeat() {
+    if (BEAT_NUM <= 0) return;
+
+    tsunami.trackStop(beatTrack);
+    beatTrack = random(BEAT_START, BEAT_START+BEAT_NUM);
+    Serial << "Playing beat track: " << beatTrack << endl;
+
+    tsunami.trackGain(beatTrack,TWO_TRACKS_DB);   
+    tsunami.trackLoop(beatTrack,true);    
+    tsunami.trackPlayPoly(beatTrack, 0, true);
+}
+
+void stopBeat() {
+    if (beatTrack > 0) {
+      tsunami.trackStop(beatTrack);
+      beatTrack = -1;
+    }
+}
+
+void changeCorrEntry(systemState currState, systemState newState, boolean loop) {
+  Serial << "changeCorr.  newState: " << ((byte)newState) << " currState: " << ((byte)currState) << endl;
+  if (corrChangedTrack != -1) {
+    tsunami.trackStop(corrChangedTrack);  // Stop the old corr change track
+    corrChangedTrack = -1;
+  }
+  
+  if (!loop) {
+  
+    corrTrack[(byte)newState] = random(COOR_START[(byte)newState], COOR_START[(byte)newState]+COOR_NUM[(byte)newState]);
+    Serial << "Playing coor track: " << corrTrack[(byte)newState] << " state: " << ((byte)newState) << endl;
+    tsunami.trackGain(corrTrack[(byte)newState],TWO_TRACKS_DB);   
+    tsunami.trackLoop(corrTrack[(byte)newState],loop);    
+    tsunami.trackPlayPoly(corrTrack[(byte)newState], 0, true); 
+    
+    delay(200);  // Delay enough so that isPlaying check will work
+    tsunami.update();  // TODO: Shouldnt need
+  } else {
+    if ((byte)newState > (byte)currState) {
+      if (corrChangedTrack > -1) tsunami.trackStop(corrChangedTrack);
+    
+      // play pos state change   
+      corrChangedTrack = random(POS_CHANGE_START, POS_CHANGE_START+POS_CHANGE_NUM);
+      Serial << "Playing pos corr changed track: " << corrChangedTrack << endl;
+  
+      tsunami.trackGain(corrChangedTrack,TWO_TRACKS_DB);   
+      tsunami.trackLoop(corrChangedTrack,false);    
+      tsunami.trackPlayPoly(corrChangedTrack, 0, true);
+      delay(200);
+    } else {
+      if (corrChangedTrack > -1) tsunami.trackStop(corrChangedTrack);
+    
+      // play neg state change   
+      corrChangedTrack = random(NEG_CHANGE_START, NEG_CHANGE_START+NEG_CHANGE_NUM);
+      Serial << "Playing neg corr changed track: " << corrChangedTrack << endl;
+  
+      tsunami.trackGain(corrChangedTrack,TWO_TRACKS_DB);   
+      tsunami.trackLoop(corrChangedTrack,false);    
+      tsunami.trackPlayPoly(corrChangedTrack, 0, true);    
+      delay(200);
+    }
+  }
+}
+
+void changeCorrUpdate(systemState state,boolean loop) {
+  if (tsunami.isTrackPlaying(corrTrack[(byte)state])) return;
+  if (tsunami.isTrackPlaying(corrChangedTrack)) {
+    coorTimer.reset();
+    return;
+  }
+
+  if (!coorTimer.check()) return;  // wait a bit after track ends
+  
+  if (loop) {
+    corrTrack[(byte)state] = random(COOR_START[(byte)state], COOR_START[(byte)state]+COOR_NUM[(byte)state]);
+    Serial << "Playing coor track: " << corrTrack[(byte)state] << " state: " << ((byte)state) << endl;
+    tsunami.trackGain(corrTrack[(byte)state],TWO_TRACKS_DB);   
+    tsunami.trackLoop(corrTrack[(byte)state],loop);    
+    tsunami.trackPlayPoly(corrTrack[(byte)state], 0, true); 
+    
+    delay(200);  // Delay enough so that isPlaying check will work
+    tsunami.update();  // TODO: Shouldnt need
+  }
+}
+
+void changeCorrExit(systemState state) {  
+  Serial << "Stopping coor track: " << corrTrack[(byte)state] << " state: " << ((byte)state) << endl;
+  tsunami.trackStop(corrTrack[(byte)state]);
+}
+
 void lonelyEnter() {
-    tsunami.stopAllTracks();
+    tsunami.stopAllTracks();  // Keep this here as safe guard cleanup
 
     lonelyTrack = random(LONELY_START, LONELY_START+LONELY_NUM);
     Serial << "Playing idle track: " << lonelyTrack << endl;
 
-    tsunami.trackGain(lonelyTrack,0);   
+    tsunami.trackGain(lonelyTrack,SINGLE_TRACK_DB);   
+    tsunami.trackLoop(lonelyTrack,false);   
     tsunami.trackPlayPoly(lonelyTrack, 0, true);   
     lonelyTimer.interval(LONELY_PLAY_SPACING);
     lonelyTimer.reset();
@@ -409,8 +563,9 @@ void lonely() {
     lonelyTrack = random(LONELY_START, LONELY_START+LONELY_NUM);
     Serial << "Playing new lonely track: " << lonelyTrack << endl;
 
-    tsunami.trackGain(lonelyTrack,0);   
+    tsunami.trackGain(lonelyTrack,SINGLE_TRACK_DB);   
     tsunami.trackPlayPoly(lonelyTrack, 0, true);   
+    tsunami.trackLoop(lonelyTrack,false);   
     lonelyTimer.reset();
  }
 
@@ -419,66 +574,59 @@ void lonely() {
   tsunami.trackStop(lonelyTrack);   
  }
 
-int ohaiTrack;
-
 void ohaiEnter() {
-    tsunami.stopAllTracks();
+  Serial << "Ohai enter" << " lastState: " << convStateToEnum(lastState) << endl;
 
-    ohaiTrack = random(OHAI_START, OHAI_START+OHAI_NUM);
-    Serial << "Playing ohai track: " << ohaiTrack << endl;
-    tsunami.trackGain(ohaiTrack,0);   
-    tsunami.trackPlayPoly(ohaiTrack, 0, true); 
-    delay(200);
-    tsunami.update();  
+  // Pick a new cannon track
+  if (cannonTrack != -1) {
+    tsunami.trackStop(cannonTrack);
+  }
+  cannonTrack = random(GUNFIRE_START, GUNFIRE_START+GUNFIRE_NUM);
+  changeCorrEntry((systemState)lastState.getId(), OHAI,false);
 }
-
+void ohai() {
+  changeCorrUpdate(convStateToEnum(stateMachine.getCurrentState()),false);
+}
 void ohaiExit() {
-  //Serial << "Stoping intro track" << endl;
-  //tsunami.trackStop(ohaiTrack);  
+  changeCorrExit(convStateToEnum(stateMachine.getCurrentState()));
 }
 
-
-
+void goodnufEnter() {
+  Serial << "Goodnuf enter" << " lastState: " << convStateToEnum(lastState) << endl;
+  changeCorrEntry((systemState)lastState.getId(), GOODNUF,true);
+}
 void goodnuf() {
-  static int track = 0;
-
-  if (!tsunami.isTrackPlaying(track)) {
-    track = random(GOODNUF_START, GOODNUF_START+GOODNUF_NUM);
-    Serial << "Playing goodnuf track: " << track << endl;
-    //tsunami.stopAllTracks();  // Goodnuf seems to come on top of ohai.  Let ohai finish.
-    tsunami.trackGain(track,0);   
-    tsunami.trackLoop(track,true);   
-    tsunami.trackPlayPoly(track, 0, true); 
-    delay(200); // Allow for track startup time
-  }
+  changeCorrUpdate(convStateToEnum(stateMachine.getCurrentState()),true);
+}
+void goodnufExit() {
+  changeCorrExit(convStateToEnum(stateMachine.getCurrentState()));
 }
 
+void goodjobEnter() {
+    Serial << "Goodjob enter" << " lastState: " << convStateToEnum(lastState) << endl;
+
+  changeCorrEntry((systemState)lastState.getId(), GOODJOB,true);
+}
 void goodjob() {
-  static int track = 0;
-
-  if (!tsunami.isTrackPlaying(track)) {
-    track = random(GOODJOB_START, GOODJOB_START+GOODJOB_NUM);
-    Serial << "Playing goodjob track: " << track << endl;
-    tsunami.stopAllTracks();
-    tsunami.trackGain(track,0);   
-    tsunami.trackLoop(track,true);   
-    tsunami.trackPlayPoly(track, 0, true); 
-    delay(200);
-  }
+  changeCorrUpdate(convStateToEnum(stateMachine.getCurrentState()),true);
+}
+void goodjobExit() {
+  changeCorrExit(convStateToEnum(stateMachine.getCurrentState()));
 }
 
+void winningEnter() {
+    Serial << "Winning enter" << " lastState: " << convStateToEnum(lastState) << endl;
+  changeCorrEntry((systemState)lastState.getId(), WINNING,true);
+}
 void winning() {
-  static int track = 0;
+  changeCorrUpdate(convStateToEnum(stateMachine.getCurrentState()),true);
+}
+void winningExit() {
+  changeCorrExit(convStateToEnum(stateMachine.getCurrentState()));
+}
 
-  if (!tsunami.isTrackPlaying(track)) {
-    track = random(WINNING_START, WINNING_START+WINNING_NUM);
-    Serial << "Playing winning track: " << track << endl;
-    tsunami.stopAllTracks();
-    tsunami.trackGain(track,0);   
-    tsunami.trackLoop(track,true);   
-    tsunami.trackPlayPoly(track, 0, true); 
-    delay(200);
-  }
+
+void fanfareEnter() {
 }
 
 // Player reached the win condition.  Play a long(30s) win track
@@ -491,7 +639,7 @@ void fanfare() {
 
       track = random(FANFARE_START, FANFARE_START+FANFARE_NUM);
       Serial << "Playing winning track: " << track << endl;
-      tsunami.trackGain(track,0);   
+      tsunami.trackGain(track,SINGLE_TRACK_DB);   
       tsunami.trackPlayPoly(track, 0, true); 
       delay(200);
       tsunami.update();
@@ -506,6 +654,8 @@ void fanfare() {
     }
 }
 
+void fanfareExit() {
+}
 
 // Play a sound at startup to confirm working hardware
 void startup() {
@@ -515,7 +665,7 @@ void startup() {
     if (!startupPlaying) {
       Serial << "Start Startup" << endl;
       startupTrack = FANFARE_START;
-      tsunami.trackGain(startupTrack,0);   
+      tsunami.trackGain(startupTrack,SINGLE_TRACK_DB);   
       tsunami.trackPlayPoly(startupTrack, 0, true); 
       tsunami.update();
       startupPlaying = true;
@@ -535,80 +685,36 @@ void startup() {
     }
 }
 
-/*
-void offline() {
-  if ( comms.isConnected() ) {
-    Serial << F("GOOD.  online!") << endl;
-    lastActivity = millis();
-    stateMachine.transitionTo(Online);
-  }
-}
-
-void online() {
-  if ( comms.isConnected() ) {
-  } else {
-    Serial << F("WARNING.  offline!") << endl;
-    stateMachine.transitionTo(Offline);
-  }
-}
-*/
-
-/*      
-  // loop across arches
-  for ( byte up = 0; up < N_ARCH; up++ ) {
-    if ( sAF[up].hasUpdate ) {
-      // we have an update to frequency information in sAF[i].freq
-
-      // make some noise
-      // crappy
-      uint16_t avgPower[N_SENSOR] = {0};
-      // frequency power
-      uint16_t power[N_SENSOR][N_FREQ_BINS] = {{0.0}};
-
-      // do the boneheaded thing and sum up the bins across all sensors
-      uint32_t sumSensors[N_FREQ_BINS] = {0};
-      uint32_t maxSum = 0;
-      for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
-        for ( byte i = 0; i < N_SENSOR; i++ ) {
-          sumSensors[j] += sAF[up].freq.power[i][j];
-        }
-        if ( sumSensors[j] > maxSum ) maxSum = sumSensors[j];
-      }
-
-      Serial << F("Freq bins: ");
-      // set the LEDs proportional to bins, normalized to maximum bin
-      for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
-        uint32_t value = map( sumSensors[j],
-                              (uint32_t)0, maxSum,
-                              (uint32_t)0, (uint32_t)255
-                            );
-        Serial << value << ",";
-        //    leftDown[j] = CHSV(archHue[myArch], archSat[myArch], brighten8_video(constrain(value, 0, 255)));
-      }
-      Serial << endl;
-      
-      // note that we've handled the update already
-      sAF[up].hasUpdate = false;
-    }
-    if ( sAD[up].hasUpdate ) {
-      // we have an update to distance information in sAD[i].dist
-
-      // make some noise; simple treshold-based detection of distance-closer-than
-      uint16_t thresh = sAD[up].dist.max >> 1; // div2
-      for ( byte j = 0; j < N_SENSOR; j++ ) {
-        if ( sAD[up].dist.prox[j] > thresh ) {
-          tsunami.trackPlayPoly(j + 1, 0, false);
-        }
-      }
-
-      // note that we've handled the update already
-      sAD[up].hasUpdate = false;
-    }
-  }
-  */
-
 void slaved() {
   // NOP, currently.  Will look for lighting directions, either through UDP (direct) or MQTT (procedural).
 }
 
+systemState convStateToEnum(const State & state) {
+  if (&state == &Ohai) {
+    return OHAI;
+  }
+  
+  if (&state == &Goodnuf) {
+    return GOODNUF;
+  }
+
+  if (&state == &Goodjob) {
+    return GOODJOB;
+  }
+
+  if (&state == &Winning) {
+    return WINNING;
+  }
+
+  if (&state == &Startup) {
+    return STARTUP;
+  }
+
+  if (&state == &Fanfare) {
+    return FANFARE;
+  }
+
+  Serial << "Unknown state" << endl;
+  return WINNING;
+}
 

@@ -41,7 +41,12 @@ State::State( void (*enterFunction)(), void (*updateFunction)(), void (*exitFunc
 	userUpdate = updateFunction;
 	userExit = exitFunction;
 }
-
+State::State(byte id, void (*enterFunction)(), void (*updateFunction)(), void (*exitFunction)() ){
+	userId = id;
+	userEnter = enterFunction;
+	userUpdate = updateFunction;
+	userExit = exitFunction;
+}
 //what to do when entering this state
 void State::enter(){
 	if (userEnter){
@@ -61,6 +66,9 @@ void State::exit(){
 	if (userExit){
 		userExit();
 	}
+}
+byte State::getId() {
+	return userId;
 }
 //END FINITE STATE
 
