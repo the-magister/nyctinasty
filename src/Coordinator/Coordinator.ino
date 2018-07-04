@@ -20,7 +20,7 @@
 // Master settings:
 
 // don't allow wild oscillations in state transitions. See resetTransitionLockout()
-const uint32_t transitionLockoutTime = 6000UL;
+const uint32_t transitionLockoutTime = 3000UL;
 
 // fold-increase from basal sensor readings for "yes, have a player".
 // See decidePlayerState()
@@ -29,10 +29,13 @@ const double isPlayerThreshold[N_ARCH] = {1.25, 1.25, 1.25};
 // threshold on coordination for "yes, they're coordinated".  See decideCoordinationState()
 const double areCoordinatedThreshold[N_ARCH] = {0.9, 0.9, 0.9};
 // want the coordination to be smoothed;  See decideCoordination()
-const byte smoothing = 10;
+double calculateSmoothing(double updateInterval, double halfTime);
+double powerSmoothing = calculateSmoothing( DISTANCE_SAMPLING_RATE, 1000.0 );
+double coordSmoothing = calculateSmoothing( DISTANCE_SAMPLING_RATE, 3000.0 );
+double trimThresholdSmoothing = calculateSmoothing( DISTANCE_SAMPLING_RATE, 10000.0 );
 
 // if we "win", how long do we do stuff for?
-const uint32_t fanfareDuration = 10UL * 1000UL; // seconds
+const uint32_t fanfareDuration = 30UL * 1000UL; // seconds
 
 // ##################
 
@@ -85,8 +88,8 @@ void setup() {
   // for local output
   delay(500);
   Serial.begin(115200);
-  Serial.setTimeout(5); 
-  
+  Serial.setTimeout(5);
+
   Serial << endl << endl << endl << F("Startup begins.") << endl;
 
   // configure comms
@@ -102,6 +105,11 @@ void setup() {
   // for random numbers
   randomSeed(analogRead(0));
 
+  // print out
+  Serial << F("powerSmoothing=") << powerSmoothing << endl;
+  Serial << F("coordSmoothing=") << coordSmoothing << endl;
+  Serial << F("trimThresholdSmoothing=") << trimThresholdSmoothing << endl;
+
   Serial << F("Startup complete.") << endl;
 }
 
@@ -110,7 +118,9 @@ void lookForSerialCommands() {
   if ( ! Serial.available() ) return;
 
   static boolean trigger = false;
-  
+
+  stateLock = true;
+
   char c = Serial.read();
   switch (c) {
     case 's': stateMachine.transitionTo(Startup); break;
@@ -121,47 +131,48 @@ void lookForSerialCommands() {
     case 'w': stateMachine.transitionTo(Winning); break;
     case 'f': stateMachine.transitionTo(Fanfare); break;
     case 'r': stateMachine.transitionTo(Reboot); break;
-    case 'L': 
-      stateLock = ! stateLock; 
-      Serial << "State lock=" << stateLock << endl; 
+    case 'L':
+      stateLock = false;
+      Serial << "State lock=" << stateLock << endl;
+
       break;
     case 'T': {
-      trigger = !trigger;
-      CannonTrigger trig;
-      trig.left = trigger ? TRIGGER_ON : TRIGGER_OFF;
-      trig.right = trigger ? TRIGGER_ON : TRIGGER_OFF;
-      
-      comms.publish(&trig);
-      Serial << "Trigger=" << trigger << endl; 
-      break;
-    }
+        trigger = !trigger;
+        CannonTrigger trig;
+        trig.left = trigger ? TRIGGER_ON : TRIGGER_OFF;
+        trig.right = trigger ? TRIGGER_ON : TRIGGER_OFF;
+
+        comms.publish(&trig);
+        Serial << "Trigger=" << trigger << endl;
+        break;
+      }
     case 'P': {
-      int foo = Serial.parseInt();
-      byte player = constrain(foo, 0, 2);
-      sC.isPlayer[player] = !sC.isPlayer[player];
-      break;
-    }
+        int foo = Serial.parseInt();
+        byte player = constrain(foo, 0, 2);
+        sC.isPlayer[player] = !sC.isPlayer[player];
+        sendSettings();
+        break;
+      }
     case 'C': {
-      int foo = Serial.parseInt();
-      byte pair = constrain(foo, 0, 2);
-      sC.areCoordinated[pair] = !sC.areCoordinated[pair];
-      // must have players if coordinated
-      if( sC.areCoordinated[0] ) sC.isPlayer[0] = sC.isPlayer[1] = true;
-      if( sC.areCoordinated[1] ) sC.isPlayer[1] = sC.isPlayer[2] = true;
-      if( sC.areCoordinated[2] ) sC.isPlayer[2] = sC.isPlayer[0] = true;
-      break;
-    }    
+        int foo = Serial.parseInt();
+        byte pair = constrain(foo, 0, 2);
+        sC.areCoordinated[pair] = !sC.areCoordinated[pair];
+        // must have players if coordinated
+        if ( sC.areCoordinated[0] ) sC.isPlayer[0] = sC.isPlayer[1] = true;
+        if ( sC.areCoordinated[1] ) sC.isPlayer[1] = sC.isPlayer[2] = true;
+        if ( sC.areCoordinated[2] ) sC.isPlayer[2] = sC.isPlayer[0] = true;
+        sendSettings();
+        break;
+      }
     case '\n': break;
     case '\r': break;
     default:
       Serial << F("(s)tartup, (l)onely, (o)hai, good(n)uf, (g)oodjob, (w)inning, (f)anfare, (r)eboot.") << endl;
-      Serial << F("(L)ock and unlock states. (T)rigger cannon.") << endl;
+      Serial << F("un(L)ock game state. (T)rigger cannon.") << endl;
       Serial << F("(P)(0-2) toggle player state: A0, A1, A2.") << endl;
       Serial << F("(C)(0-2) toggle player state: A0:A1, A1:A2, A2:A0.") << endl;
       break;
   }
-
-  sendSettings();
 }
 
 void loop() {
@@ -196,33 +207,18 @@ void loop() {
   }
 
   // is the state locked out?
-  if( stateLock ) {
+  if ( stateLock ) {
     resetTransitionLockout();
-    stateMachine.update();
-    return;
-  }
+  } else {
+    if ( sAD[0].hasUpdate ) decidePlayerState(0);
+    if ( sAD[1].hasUpdate ) decidePlayerState(1);
+    if ( sAD[2].hasUpdate ) decidePlayerState(2);
 
-  // otherwise, check stuff
-  if ( sAD[0].hasUpdate ) {
-    decidePlayerState(0);
-    decideCoordination(0); // 0,1
-    decideCoordination(2); // 2,0
+    if ( sAD[0].hasUpdate || sAD[1].hasUpdate ) decideCoordination(0); // 0,1
+    if ( sAD[1].hasUpdate || sAD[2].hasUpdate ) decideCoordination(1); // 1,2
+    if ( sAD[2].hasUpdate || sAD[0].hasUpdate ) decideCoordination(2); // 2,0
 
-    sAD[0].hasUpdate = false;
-  }
-  if ( sAD[1].hasUpdate ) {
-    decidePlayerState(1);
-    decideCoordination(0); // 0,1
-    decideCoordination(1); // 1,2
-
-    sAD[1].hasUpdate = false;
-  }
-  if ( sAD[2].hasUpdate ) {
-    decidePlayerState(2);
-    decideCoordination(2); // 2,0
-    decideCoordination(0); // 0,1
-
-    sAD[2].hasUpdate = false;
+    sAD[0].hasUpdate = sAD[1].hasUpdate = sAD[2].hasUpdate = false;
   }
 
   // state machine
@@ -256,7 +252,9 @@ void startupEnter() {
   genericStateEnter(STARTUP);
 }
 void startupUpdate() {
-  if ( transitionLockoutExpired() ) stateMachine.transitionTo(Lonely);
+  if ( ! transitionLockoutExpired() ) return;
+
+  stateMachine.transitionTo(Lonely);
 }
 
 // LONELY state
@@ -341,15 +339,15 @@ void fanfareUpdate() {
 // algorithm for player detection
 double detectPlayer(byte arch) {
   // compute mean
-  static double meanAvgPower = {75};
+  double meanAvgPower = 0;
   for ( byte s = 0; s < N_SENSOR; s++ ) meanAvgPower += sAD[arch].dist.prox[s];
   meanAvgPower /= (double)N_SENSOR;
 
   // smooth
-  const double s = 10;
   static double power[N_ARCH] = {75};
-  power[arch] = (power[arch] * (s - 1.0) + meanAvgPower) / s;
+  power[arch] = performSmoothing(power[arch], meanAvgPower, powerSmoothing);
 
+  //  if( arch==2 ) Serial << "detectPlayer. arch=" << arch << " power=" << power[arch] << endl;
   return ( power[arch] );
 }
 
@@ -357,24 +355,29 @@ double detectPlayer(byte arch) {
 void decidePlayerState(byte arch) {
   static double smoothedPower[N_ARCH] = {75, 75, 75};
   // should be 75.
-  const double s = 10;
 
   // current, immediate value
   double power = detectPlayer(arch);
 
-  boolean state = detectPlayer(arch) > smoothedPower[arch] * isPlayerThreshold[arch];
+  boolean state = power > (smoothedPower[arch] * isPlayerThreshold[arch]);
+
+  //  if( arch==2 ) Serial << "decidePlayerState. arch=" << arch << " power=" << power << " thresh=" << smoothedPower[arch] * isPlayerThreshold[arch] << " state=" << sC.isPlayer[arch] << endl;
+
   if ( state != sC.isPlayer[arch] ) {
     sC.isPlayer[arch] = state;
     Serial << "decidePlayerState.  isPlayer? A" << arch << "=" << state << endl;
     sendSettings();
   }
 
-  if ( !sC.isPlayer[arch] && power < smoothedPower[arch] ) {
-    smoothedPower[arch] = (smoothedPower[arch] * (s - 1.0) + power) / s;
+  /*
+    //  if ( !sC.isPlayer[arch] && power < smoothedPower[arch] ) {
+    if ( !sC.isPlayer[arch] && power>0.0 ) {
+      smoothedPower[arch] = performSmoothing(smoothedPower[arch], power, trimThresholdSmoothing);
     //    Serial << "decidePlayerState.  smoothed power? A0=" << smoothedPower[0];
     //    Serial << " A1=" << smoothedPower[1];
     //    Serial << " A2=" << smoothedPower[2] << endl;
-  }
+    }
+  */
 }
 
 // algorithm for coordination detection
@@ -385,7 +388,8 @@ double isCoordinated(byte arch1, byte arch2) {
   if ( sC.isPlayer[arch1] == false || sC.isPlayer[arch2] == false ) return (0.0);
 
   // I didn't say it was an awesome algorithm; watch this space.
-  return( correlation_fast(sAD[arch1].dist.prox, sAD[arch2].dist.prox) );
+  //  return( correlation_fast(sAD[arch1].dist.prox, sAD[arch2].dist.prox) );
+  return ( 1.0 );
 }
 
 void decideCoordination(byte pair) {
@@ -399,11 +403,11 @@ void decideCoordination(byte pair) {
 
   // want coordination to be smoothed
   static double smoothCoord[N_ARCH] = {0.0};
-  smoothCoord[pair] = ( smoothCoord[pair] * ((double)smoothing - 1) + coord ) / ((double)smoothing);
+  smoothCoord[pair] = performSmoothing(smoothCoord[pair], coord, coordSmoothing);
 
-  //  if( smoothCoord[pair] > 0 ) {
-  //    Serial << "decideCoordination. P" << pair << "=" << smoothCoord[pair] << endl;
-  //  }
+//  if ( smoothCoord[pair] > 0 ) {
+//    Serial << "decideCoordination. P" << pair << "=" << smoothCoord[pair] << endl;
+//  }
 
   boolean areCoordinated = smoothCoord[pair] > areCoordinatedThreshold[pair];
   if ( areCoordinated != sC.areCoordinated[pair] ) {
@@ -412,6 +416,31 @@ void decideCoordination(byte pair) {
     sendSettings();
   }
 
+}
+
+double calculateSmoothing(double updateInterval, double halfTime) {
+  // smooth
+  // updateInterval [=] ms; delta time between update to this function
+  // halfTime [=] ms; delta time for smoothed signal to transition halfway to new value
+  return ( halfTime / updateInterval / log(2.0) );
+}
+double performSmoothing(double currentValue, double newValue, double smoothing) {
+  return (
+           (currentValue * (smoothing - 1.0) + newValue) / smoothing
+         );
+}
+
+
+byte coordIndex(byte arch1, byte arch2) {
+  switch ( arch1 + arch2 ) {
+    case 1: return (0); break; // A0:A1 or A1:A0
+    case 3: return (1); break; // A1:A2 or A2:A1
+    case 2: return (2); break; // A2:A0 or A0:A2
+    default:
+      Serial << F("coordIndex.  ERROR. arch1=") << arch1 << F(" arch2=") << arch2 << endl;
+      return ( 0 );
+      break;
+  }
 }
 
 byte totalPlayersGE(byte th) {
@@ -463,7 +492,6 @@ void sendSettings() {
   Serial << endl;
 
   comms.publish(&sC);
-
 }
 
 
@@ -750,6 +778,7 @@ void concordanceByPower() {
 
   }
 */
+
 
 
 

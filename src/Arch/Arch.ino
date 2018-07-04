@@ -187,20 +187,16 @@ CRGBPalette16 coordPalette;
 void calculateCoordPalette() {
   
   CRGBArray<16> pal;
-  
-  if( sC.settings.areCoordinated[leftCoord] ) {
-    pal.fill_gradient(archColor[leftArch], archColor[myArch], archColor[leftArch] );
-  } else {
-    pal = CRGB::Black;
-  }
-  if( sC.settings.areCoordinated[rightCoord] ) {
-    pal.fill_gradient(archColor[rightArch], archColor[myArch], archColor[rightArch] );
-  } else {
-    pal = CRGB::Black;
-  }
 
-  // copy out
-  for(byte i=0; i<16; i++) coordPalette[i] = pal[i];
+  byte totalCoord = sC.settings.areCoordinated[0] + sC.settings.areCoordinated[1] + sC.settings.areCoordinated[2];
+
+  switch(totalCoord) {
+    case 0: coordPalette = CloudColors_p ; break;
+    case 1: coordPalette = LavaColors_p; break;
+    case 2: coordPalette = RainbowColors_p; break;
+    case 3: coordPalette = PartyColors_p; break;
+  }
+  
 }
 
 CRGBPalette16 playerPaletteLeft, playerPaletteRight; // left, right
@@ -271,7 +267,7 @@ void updateState() {
 void startup() {
   
   static byte hue = archColor[myArch].hue;
-  EVERY_N_MILLISECONDS(10) {
+  EVERY_N_MILLISECONDS(30) {
     // show a throbbing rainbow background
     hue++;
     leftUp.fill_rainbow(hue, 255 / leftUp.size()); // paint
@@ -283,6 +279,9 @@ void startup() {
     leftBar1.fill_solid(archColor[myArch]);
     rightBar2 = rightBar1 = leftBar2 = leftBar1;
     
+	// do something useful with the deck lights
+	updateDeck();
+	
     // do it now
     pushToHardware();
   }
@@ -319,11 +318,42 @@ void playerAndCoordinationUpdate() {
   updateDeck();
   updateTopsByCoordination();
   updateLegsByPlayer();
+  addSomeSparkles();
 }
+
+void addSomeSparkles() {
+	// little strobes of color
+
+  EVERY_N_MILLISECONDS( 100 ) {
+    static byte which = 0;
+  	static byte colorIndex = 0;
+  	const byte brightness = 16;
+  	
+//    CRGB color = ColorFromPalette( CloudColors_p, colorIndex, brightness, LINEARBLEND );
+    CRGB color = CRGB::FairyLight;
+    color -= CRGB(64,64,64);
+
+    switch( which ) {
+      case 0: leftUp[random8(leftUp.size())] += color; break;
+    	case 1: rightUp[random8(rightUp.size())] += color; break;
+    	case 2: leftDown[random8(leftDown.size())] += color; break;
+    	case 3: rightDown[random8(rightDown.size())] += color; break;
+    
+    	case 4: leftDeck[random8(leftDeck.size())] += color; break;
+    	case 5: rightDeck[random8(rightDeck.size())] += color; break;
+    }
+    which++;
+    if( which>=5 ) which=0;  	
+  	colorIndex ++;
+  }
+}
+
 
 void updateDeck() {
   leftDeck.fill_solid(deckColor);
-  rightDeck.fill_solid(deckColor);
+  leftDeck.fadeLightBy( 64 ); // dim it
+  
+  rightDeck = leftDeck;
 }
 
 void updateTopsByCoordination() {
@@ -447,5 +477,6 @@ void pushToHardware() {
     Serial << F("FastLED reported FPS, Hz=") << reportedFPS << endl;
   }
 }
+
 
 
