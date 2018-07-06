@@ -337,18 +337,31 @@ void fanfareUpdate() {
 }
 
 // algorithm for player detection
+double meanPower[N_ARCH] = {75};
 double detectPlayer(byte arch) {
   // compute mean
   double meanAvgPower = 0;
   for ( byte s = 0; s < N_SENSOR; s++ ) meanAvgPower += sAD[arch].dist.prox[s];
   meanAvgPower /= (double)N_SENSOR;
 
-  // smooth
-  static double power[N_ARCH] = {75};
-  power[arch] = performSmoothing(power[arch], meanAvgPower, powerSmoothing);
+/*
+  // compute sd
+  double sdAvgPower = 0;
+  for ( byte s = 0; s < N_SENSOR; s++ ) sdAvgPower += pow(sAD[arch].dist.prox[s]-meanAvgPower, 2.0);
+  sdAvgPower = pow(sdAvgPower/(double)(N_SENSOR-1), 0.5);
+ 
+ */
 
-  //  if( arch==2 ) Serial << "detectPlayer. arch=" << arch << " power=" << power[arch] << endl;
-  return ( power[arch] );
+  // smooth
+  meanPower[arch] = performSmoothing(meanPower[arch], meanAvgPower, powerSmoothing);
+/*  
+  static double sd[N_ARCH] = {75};
+  sd[arch] = performSmoothing(sd[arch], sdAvgPower, powerSmoothing);
+ */
+//  if( arch==2 ) Serial << "detectPlayer. arch=" << arch << " mean=" << mean[arch] << " cv=" << sd[arch]/mean[arch]*100.0 << endl;
+//  if( arch==2 ) Serial << "detectPlayer. arch=" << arch << " mean=" << mean[arch] << endl;
+
+  return ( meanPower[arch] );
 }
 
 // watch the player state and also count the number of times in that same state (persistence)
@@ -389,7 +402,10 @@ double isCoordinated(byte arch1, byte arch2) {
 
   // I didn't say it was an awesome algorithm; watch this space.
   //  return( correlation_fast(sAD[arch1].dist.prox, sAD[arch2].dist.prox) );
-  return ( 1.0 );
+  double foo1 = constrain(meanPower[arch1], 0.0, 600.0)/600.0/2.0;
+  double foo2 = constrain(meanPower[arch2], 0.0, 600.0)/600.0/2;
+//  return ( foo1 + foo2 );
+  return( 1.0 );
 }
 
 void decideCoordination(byte pair) {
@@ -405,9 +421,7 @@ void decideCoordination(byte pair) {
   static double smoothCoord[N_ARCH] = {0.0};
   smoothCoord[pair] = performSmoothing(smoothCoord[pair], coord, coordSmoothing);
 
-//  if ( smoothCoord[pair] > 0 ) {
-//    Serial << "decideCoordination. P" << pair << "=" << smoothCoord[pair] << endl;
-//  }
+  if ( smoothCoord[pair] > 0 ) Serial << "decideCoordination. P" << pair << "=" << smoothCoord[pair] << endl;
 
   boolean areCoordinated = smoothCoord[pair] > areCoordinatedThreshold[pair];
   if ( areCoordinated != sC.areCoordinated[pair] ) {

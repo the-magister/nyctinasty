@@ -50,26 +50,26 @@ byte leftCoord, rightCoord;
 #define LEDS_UP 13
 #define LEDS_DECK 4
 
-CRGBArray<LEDS_BAR+LEDS_DOWN> leftBack;
-CRGBArray<LEDS_BAR+LEDS_DOWN> rightBack;
-CRGBArray<LEDS_BAR+LEDS_UP+LEDS_DECK> leftFront;
-CRGBArray<LEDS_BAR+LEDS_UP+LEDS_DECK> rightFront;
+CRGBArray < LEDS_BAR + LEDS_DOWN > leftBack;
+CRGBArray < LEDS_BAR + LEDS_DOWN > rightBack;
+CRGBArray < LEDS_BAR + LEDS_UP + LEDS_DECK > leftFront;
+CRGBArray < LEDS_BAR + LEDS_UP + LEDS_DECK > rightFront;
 
 // bars
-CRGBSet rightBar1 = rightBack(0, LEDS_BAR-1);
-CRGBSet rightBar2 = rightFront(0, LEDS_BAR-1);
-CRGBSet leftBar1 = leftBack(0, LEDS_BAR-1);
-CRGBSet leftBar2 = leftFront(0, LEDS_BAR-1);
+CRGBSet rightBar1 = rightBack(0, LEDS_BAR - 1);
+CRGBSet rightBar2 = rightFront(0, LEDS_BAR - 1);
+CRGBSet leftBar1 = leftBack(0, LEDS_BAR - 1);
+CRGBSet leftBar2 = leftFront(0, LEDS_BAR - 1);
 
 // verticals
-CRGBSet leftUp = leftFront(LEDS_BAR, LEDS_BAR+LEDS_UP-1);
-CRGBSet rightUp = rightFront(LEDS_BAR, LEDS_BAR+LEDS_UP-1);
-CRGBSet leftDown = leftBack(LEDS_BAR, LEDS_BAR+LEDS_DOWN-1);
-CRGBSet rightDown = rightBack(LEDS_BAR, LEDS_BAR+LEDS_DOWN-1);
+CRGBSet leftUp = leftFront(LEDS_BAR, LEDS_BAR + LEDS_UP - 1);
+CRGBSet rightUp = rightFront(LEDS_BAR, LEDS_BAR + LEDS_UP - 1);
+CRGBSet leftDown = leftBack(LEDS_BAR, LEDS_BAR + LEDS_DOWN - 1);
+CRGBSet rightDown = rightBack(LEDS_BAR, LEDS_BAR + LEDS_DOWN - 1);
 
 // deck lights under rail
-CRGBSet leftDeck = leftFront(LEDS_BAR+LEDS_UP, LEDS_BAR+LEDS_UP+LEDS_DECK-1);
-CRGBSet rightDeck = rightFront(LEDS_BAR+LEDS_UP, LEDS_BAR+LEDS_UP+LEDS_DECK-1);
+CRGBSet leftDeck = leftFront(LEDS_BAR + LEDS_UP, LEDS_BAR + LEDS_UP + LEDS_DECK - 1);
+CRGBSet rightDeck = rightFront(LEDS_BAR + LEDS_UP, LEDS_BAR + LEDS_UP + LEDS_DECK - 1);
 
 // color choices, based on arch information
 const CHSV archColor[N_ARCH] = {
@@ -92,7 +92,9 @@ void goodnuf(); State Goodnuf = State(goodnuf);
 void goodjob(); State Goodjob = State(goodjob);
 void winning(); State Winning = State(winning);
 void fanfare(); State Fanfare = State(fanfare);
-void reboot() { comms.reboot(); }; State Reboot = State(reboot);
+void reboot() {
+  comms.reboot();
+}; State Reboot = State(reboot);
 FSM stateMachine = FSM(Startup); // initialize state machine
 
 // incoming message storage and flag for update
@@ -136,25 +138,25 @@ void setup() {
   comms.begin(myRole);
   myRole = comms.getRole();
   myArch = myRole - 1;
-  switch(myArch) {
-    case 0: 
+  switch (myArch) {
+    case 0:
       // sC.isPlayer indexes
-      leftArch=1; rightArch=2; 
+      leftArch = 1; rightArch = 2;
       // sC.areCoordinated indexes
-      leftCoord=0; rightCoord=2;
+      leftCoord = 0; rightCoord = 2;
       break;
-    case 1: 
-      leftArch=2; rightArch=0; 
-      leftCoord=1; rightCoord=0;
+    case 1:
+      leftArch = 2; rightArch = 0;
+      leftCoord = 1; rightCoord = 0;
       break;
-    case 2: 
-      leftArch=0; rightArch=1; 
-      leftCoord=2; rightCoord=1;
-      break;    
+    case 2:
+      leftArch = 0; rightArch = 1;
+      leftCoord = 2; rightCoord = 1;
+      break;
   }
   Serial << F("Arch indexes: left=") << leftArch << F(" my=") << myArch << F(" right=") << rightArch << endl;
   Serial << F("Coordination indexes: left=") << leftCoord << F(" right=") << rightCoord << endl;
-  
+
   // subscribe
   comms.subscribe(&sC.settings, &sC.hasUpdate);
 
@@ -185,41 +187,41 @@ void loop() {
 
 CRGBPalette16 coordPalette;
 void calculateCoordPalette() {
-  
+
   CRGBArray<16> pal;
 
   byte totalCoord = sC.settings.areCoordinated[0] + sC.settings.areCoordinated[1] + sC.settings.areCoordinated[2];
 
-  switch(totalCoord) {
+  switch (totalCoord) {
     case 0: coordPalette = CloudColors_p ; break;
     case 1: coordPalette = LavaColors_p; break;
     case 2: coordPalette = RainbowColors_p; break;
     case 3: coordPalette = PartyColors_p; break;
   }
-  
+
 }
 
 CRGBPalette16 playerPaletteLeft, playerPaletteRight; // left, right
 void calculatePlayerPalette() {
-  
-  CHSV me = CHSV(archColor[myArch].hue, archColor[myArch].sat, 
-    sC.settings.isPlayer[myArch] ? 255 : 0
-  );
-  CHSV left = CHSV(archColor[leftArch].hue, archColor[leftArch].sat, 
-    sC.settings.isPlayer[leftArch] ? 255 : 0
-  );
-  CHSV right = CHSV(archColor[rightArch].hue, archColor[rightArch].sat, 
-    sC.settings.isPlayer[rightArch] ? 255 : 0
-  );
+
+  CHSV me = CHSV(archColor[myArch].hue, archColor[myArch].sat,
+                 sC.settings.isPlayer[myArch] ? 255 : 0
+                );
+  CHSV left = CHSV(archColor[leftArch].hue, archColor[leftArch].sat,
+                   sC.settings.isPlayer[leftArch] ? 255 : 0
+                  );
+  CHSV right = CHSV(archColor[rightArch].hue, archColor[rightArch].sat,
+                    sC.settings.isPlayer[rightArch] ? 255 : 0
+                   );
 
   CRGBArray<16> palLeft;
   palLeft.fill_gradient(left, me, left);
 
   CRGBArray<16> palRight;
   palRight.fill_gradient(right, me, right);
- 
+
   // copy out
-  for(byte i=0; i<16; i++) {
+  for (byte i = 0; i < 16; i++) {
     playerPaletteLeft[i] = palLeft[i];
     playerPaletteRight[i] = palRight[i];
   }
@@ -242,17 +244,17 @@ void updateState() {
   }
 
   Serial << F("State change. to=");
-  switch( sC.settings.state ) {
+  switch ( sC.settings.state ) {
     case STARTUP: Serial << "STARTUP"; break;  //  all roles start here
-  
+
     case LONELY: Serial << "LONELY"; break;   // 0 players
     case OHAI: Serial << "OHAI"; break;   // 1 players
     case GOODNUF: Serial << "GOODNUF"; break;  // 2 players
     case GOODJOB: Serial << "GOODJOB"; break;  // 3 players or 2 players coordinated
     case WINNING: Serial << "WINNING"; break;  // 3 players and 2 players coordinated
-    case FANFARE: Serial << "FANFARE"; break;  // 3 players and 3 players coordinated 
-  
-    case REBOOT: Serial << "REBOOT"; break;   //  trigger to reboot 
+    case FANFARE: Serial << "FANFARE"; break;  // 3 players and 3 players coordinated
+
+    case REBOOT: Serial << "REBOOT"; break;   //  trigger to reboot
   }
   Serial << ". isPlayer? A0=" << sC.settings.isPlayer[0];
   Serial << " A1=" << sC.settings.isPlayer[1];
@@ -265,7 +267,7 @@ void updateState() {
 }
 
 void startup() {
-  
+
   static byte hue = archColor[myArch].hue;
   EVERY_N_MILLISECONDS(30) {
     // show a throbbing rainbow background
@@ -274,14 +276,14 @@ void startup() {
     rightUp = leftUp;
     leftDown.fill_rainbow(hue + 128, -255 / leftDown.size());
     rightDown = leftFront;
-    
+
     // color the bar with our color
     leftBar1.fill_solid(archColor[myArch]);
     rightBar2 = rightBar1 = leftBar2 = leftBar1;
-    
-	// do something useful with the deck lights
-	updateDeck();
-	
+
+    // do something useful with the deck lights
+    updateDeck();
+
     // do it now
     pushToHardware();
   }
@@ -322,29 +324,29 @@ void playerAndCoordinationUpdate() {
 }
 
 void addSomeSparkles() {
-	// little strobes of color
+  // little strobes of color
 
   EVERY_N_MILLISECONDS( 100 ) {
     static byte which = 0;
-  	static byte colorIndex = 0;
-  	const byte brightness = 16;
-  	
-//    CRGB color = ColorFromPalette( CloudColors_p, colorIndex, brightness, LINEARBLEND );
-    CRGB color = CRGB::FairyLight;
-    color -= CRGB(64,64,64);
+    static byte colorIndex = 0;
+    const byte brightness = 16;
 
-    switch( which ) {
+    //    CRGB color = ColorFromPalette( CloudColors_p, colorIndex, brightness, LINEARBLEND );
+    CRGB color = CRGB::FairyLight;
+    color -= CRGB(64, 64, 64);
+
+    switch ( which ) {
       case 0: leftUp[random8(leftUp.size())] += color; break;
-    	case 1: rightUp[random8(rightUp.size())] += color; break;
-    	case 2: leftDown[random8(leftDown.size())] += color; break;
-    	case 3: rightDown[random8(rightDown.size())] += color; break;
-    
-    	case 4: leftDeck[random8(leftDeck.size())] += color; break;
-    	case 5: rightDeck[random8(rightDeck.size())] += color; break;
+      case 1: rightUp[random8(rightUp.size())] += color; break;
+      case 2: leftDown[random8(leftDown.size())] += color; break;
+      case 3: rightDown[random8(rightDown.size())] += color; break;
+
+      case 4: leftDeck[random8(leftDeck.size())] += color; break;
+      case 5: rightDeck[random8(rightDeck.size())] += color; break;
     }
     which++;
-    if( which>=5 ) which=0;  	
-  	colorIndex ++;
+    if ( which >= 5 ) which = 0;
+    colorIndex ++;
   }
 }
 
@@ -352,13 +354,13 @@ void addSomeSparkles() {
 void updateDeck() {
   leftDeck.fill_solid(deckColor);
   leftDeck.fadeLightBy( 64 ); // dim it
-  
+
   rightDeck = leftDeck;
 }
 
 void updateTopsByCoordination() {
-  static byte colorIndex = 0;  
-  
+  static byte colorIndex = 0;
+
   EVERY_N_MILLISECONDS( 20 ) {
     colorIndex ++;
     byte j = 0;
@@ -369,12 +371,12 @@ void updateTopsByCoordination() {
     for ( int i = 0; i < rightUp.size(); i++) {
       rightUp[i] = ColorFromPalette( coordPalette, colorIndex + j++, 255, LINEARBLEND );
     }
-  }  
+  }
 }
 
 void updateLegsByPlayer() {
   static byte colorIndex = 0;
-  
+
   EVERY_N_MILLISECONDS( 20 ) {
     colorIndex ++;
     byte j = 0;
@@ -385,28 +387,28 @@ void updateLegsByPlayer() {
     for ( int i = 0; i < rightDown.size(); i++) {
       rightDown[i] = ColorFromPalette( playerPaletteRight, colorIndex + j++, 255, LINEARBLEND );
     }
-  }  
+  }
 
 }
 
 void updateSensors() {
 
-/*
- * Order of operation is critical here.  We have three subsystems that use ISRs:
- *  FastLED: turns off ISRs
- *  WiFi: received information may be lost w/o ISR
- *  SoftwareSerial: received information may be lost w/o ISR
- *  
- *  From this, you can see that we need to be very careful with FastLED.show(), and 
- *  queue those up after we get SoftwareSerial data.  Can't really control when we get
- *  WiFi packets.
- *
- */
+  /*
+     Order of operation is critical here.  We have three subsystems that use ISRs:
+      FastLED: turns off ISRs
+      WiFi: received information may be lost w/o ISR
+      SoftwareSerial: received information may be lost w/o ISR
+
+      From this, you can see that we need to be very careful with FastLED.show(), and
+      queue those up after we get SoftwareSerial data.  Can't really control when we get
+      WiFi packets.
+
+  */
 
   static Metro distanceUpdate(DISTANCE_SAMPLING_RATE);
   static boolean pinState = false;
   static uint32_t counter = 0;
-  
+
   if ( distanceUpdate.check() ) {
     distanceUpdate.reset();
     pinState = !pinState;
@@ -430,15 +432,15 @@ void updateSensors() {
 
   const uint32_t reportInterval = 10;
   EVERY_N_SECONDS( reportInterval ) {
-    uint32_t actualDISTANCE_SAMPLING_RATE = (reportInterval*1000UL)/counter;
+    uint32_t actualDISTANCE_SAMPLING_RATE = (reportInterval * 1000UL) / counter;
 
     Serial << F("Distance sample interval, actual=") << actualDISTANCE_SAMPLING_RATE;
     Serial << F(" hypothetical=") << DISTANCE_SAMPLING_RATE;
     Serial << F(" ms.") << endl;
-    
-    counter=0;
+
+    counter = 0;
   }
-  
+
 }
 
 // adjust lights on the bar with distance readings
@@ -448,9 +450,11 @@ void updateBarByDistance() {
   static CRGBArray<N_SENSOR> bar;
   for ( byte s = 0; s < N_SENSOR; s++ ) {
     // quash noise
-    if ( dist.prox[s] < dist.noise ) dist.prox[s] = dist.min;
+    uint16_t prox = dist.prox[s] < dist.noise ? dist.min : dist.prox[s];
+//    if ( dist.prox[s] < dist.noise ) dist.prox[s] = dist.min;
     uint16_t intensity = map(
-                           dist.prox[s],
+//                           dist.prox[s],
+                           prox,
                            dist.min, dist.max,
                            (uint16_t)0, (uint16_t)255
                          );
