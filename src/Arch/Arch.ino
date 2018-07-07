@@ -173,8 +173,13 @@ void loop() {
   // check for settings update
   if ( sC.hasUpdate ) {
     updateState();
+    
+    recordTransition();
     calculateCoordPalette();
     calculatePlayerPalette();
+
+    showTransition();
+    
     sC.hasUpdate = false;
   }
 
@@ -187,8 +192,6 @@ void loop() {
 
 CRGBPalette16 coordPalette;
 void calculateCoordPalette() {
-
-  CRGBArray<16> pal;
 
   byte totalCoord = sC.settings.areCoordinated[0] + sC.settings.areCoordinated[1] + sC.settings.areCoordinated[2];
 
@@ -215,10 +218,10 @@ void calculatePlayerPalette() {
                    );
 
   CRGBArray<16> palLeft;
-  palLeft.fill_gradient(left, me, left);
+  palLeft.fill_gradient(me, left, me);
 
   CRGBArray<16> palRight;
-  palRight.fill_gradient(right, me, right);
+  palRight.fill_gradient(me, right, me);
 
   // copy out
   for (byte i = 0; i < 16; i++) {
@@ -269,23 +272,18 @@ void updateState() {
 void startup() {
 
   static byte hue = archColor[myArch].hue;
-  EVERY_N_MILLISECONDS(30) {
+  EVERY_N_MILLISECONDS(20) {
     // show a throbbing rainbow background
-    hue++;
-    leftUp.fill_rainbow(hue, 255 / leftUp.size()); // paint
-    rightUp = leftUp;
-    leftDown.fill_rainbow(hue + 128, -255 / leftDown.size());
-    rightDown = leftFront;
+//    hue++;
+//    hue += 255 / leftBack.size();
+//    hue += random8(1, 255/leftBack.size());
+    hue += 5;
+    
+    leftBack.fill_rainbow(hue, 255 / leftBack.size()); // paint
+    leftFront.fill_rainbow(hue + 128, -255 / leftFront.size());
 
-    // color the bar with our color
-    leftBar1.fill_solid(archColor[myArch]);
-    rightBar2 = rightBar1 = leftBar2 = leftBar1;
-
-    // do something useful with the deck lights
-    updateDeck();
-
-    // do it now
-    pushToHardware();
+    rightBack = leftBack;
+    rightFront = leftFront;
   }
 
 }
@@ -313,14 +311,46 @@ void winning() {
 
 void fanfare() {
   // need some kind of "yeah, playah!" animation
-  playerAndCoordinationUpdate();
+  startup(); // has a nice rainbow for us.
+   // these animations _add_ LED values and must be run last
+  addSomeSparkles();
+  addSomeBlame();
 }
 
 void playerAndCoordinationUpdate() {
+  // these animations _set_ LED values and must be run first
   updateDeck();
-  updateTopsByCoordination();
-  updateLegsByPlayer();
+  updateTops();
+  updateLegs();
+  // these animations _add_ LED values and must be run last
   addSomeSparkles();
+  addSomeBlame();
+}
+
+void showTransition() {
+  // very special routine, as it gets to pushToHardware().
+  CRGB color = CRGB::White;
+  leftBack.fill_solid(color);
+  leftFront.fill_solid(color);
+  rightBack.fill_solid(color);
+  rightFront.fill_solid(color);
+  
+  pushToHardware();
+
+  // should have the effect of strobing the whole structure on a state change.
+}
+
+void addSomeBlame() {
+  if( ! blamedForTransition() ) return; // blameless
+  if( deltaTransition() > 2000UL ) return; // enough shaming
+
+  // cylon white dot
+  EVERY_N_MILLISECONDS( 20 ) {
+    uint16_t posLeft = beatsin16(120, 0, leftDown.size()-1);
+    uint16_t posRight = map(posLeft, 0, leftDown.size()-1, rightDown.size()-1, 0);
+    leftDown[posLeft] += 255;
+    rightDown[posRight] += 255;
+  }
 }
 
 void addSomeSparkles() {
@@ -329,12 +359,12 @@ void addSomeSparkles() {
   EVERY_N_MILLISECONDS( 100 ) {
     static byte which = 0;
     static byte colorIndex = 0;
-    const byte brightness = 16;
+    const byte dim = 64;
 
     //    CRGB color = ColorFromPalette( CloudColors_p, colorIndex, brightness, LINEARBLEND );
     CRGB color = CRGB::FairyLight;
-    color -= CRGB(64, 64, 64);
-
+    color.fadeLightBy(dim);
+    
     switch ( which ) {
       case 0: leftUp[random8(leftUp.size())] += color; break;
       case 1: rightUp[random8(rightUp.size())] += color; break;
@@ -358,23 +388,35 @@ void updateDeck() {
   rightDeck = leftDeck;
 }
 
-void updateTopsByCoordination() {
+void updateTops() {
   static byte colorIndex = 0;
 
   EVERY_N_MILLISECONDS( 20 ) {
+    
+    // lay down the basic pallete
     colorIndex ++;
     byte j = 0;
     for ( int i = 0; i < leftUp.size(); i++) {
       leftUp[i] = ColorFromPalette( coordPalette, colorIndex + j++, 255, LINEARBLEND );
     }
-    j = 0;
-    for ( int i = 0; i < rightUp.size(); i++) {
-      rightUp[i] = ColorFromPalette( coordPalette, colorIndex + j++, 255, LINEARBLEND );
-    }
+    rightUp = leftUp;
+
+    // add some cylon with a speed proportional to total coordination
+    byte slowBPM = 20;
+    byte fastBPM = 60;
+    byte bpm = map(playerCoordination(), 0, 6, slowBPM, fastBPM);
+
+    uint16_t posLeft = beatsin16(bpm, 0, leftUp.size()-1);
+//    uint16_t posRight = map(posLeft, 0, leftUp.size()-1, rightUp.size()-1, 0);
+    uint16_t posRight = posLeft;
+    
+    leftUp[posLeft] = CRGB::Black;
+    rightUp[posRight] = CRGB::Black;
+    
   }
 }
 
-void updateLegsByPlayer() {
+void updateLegs() {
   static byte colorIndex = 0;
 
   EVERY_N_MILLISECONDS( 20 ) {
@@ -482,5 +524,77 @@ void pushToHardware() {
   }
 }
 
+double calculateSmoothing(double updateInterval, double halfTime) {
+  // smooth
+  // updateInterval [=] ms; delta time between update to this function
+  // halfTime [=] ms; delta time for smoothed signal to transition halfway to new value
+  double samples = halfTime / updateInterval / log(2.0);
+  double alpha = 1.0-(samples-1.0)/samples;
+  return( alpha );
+}
 
+// http://people.ds.cam.ac.uk/fanf2/hermes/doc/antiforgery/stats.pdf
+double performSmoothing(double mean, double x, double alpha) {
+  double diff = x - mean;
+  double incr = alpha * diff;
+  mean = mean + incr;
+  return( mean );
+}
+
+// track transitions 
+uint32_t lastTransition;
+boolean myBlame;
+void recordTransition() {
+
+  // did the transition involve me?
+  static boolean isPlayer, coordLeft, coordRight;
+  boolean n_isPlayer = sC.settings.isPlayer[myArch];
+  boolean n_coordLeft = sC.settings.areCoordinated[coordIndex(myArch, leftArch)];
+  boolean n_coordRight = sC.settings.areCoordinated[coordIndex(myArch, rightArch)];
+  
+  if( 
+    // did I add in or drop out?
+    n_isPlayer != isPlayer ||
+    // did I add or lose coordination with my left?
+    n_coordLeft != coordLeft ||
+    // did I add or lose coordination with my right?
+    n_coordRight != coordRight 
+    ) {
+      myBlame = true;
+    } else {
+      myBlame = false;
+    }
+
+  isPlayer = n_isPlayer;
+  coordLeft = n_coordLeft;
+  coordRight = n_coordRight;
+  
+  lastTransition = millis();
+}
+uint32_t deltaTransition() {
+  return( millis() - lastTransition );
+}
+boolean blamedForTransition() {
+  return( myBlame );
+}
+// get pair index
+byte coordIndex(byte arch1, byte arch2) {
+  switch ( arch1 + arch2 ) {
+    case 1: return (0); break; // A0:A1 or A1:A0
+    case 3: return (1); break; // A1:A2 or A2:A1
+    case 2: return (2); break; // A2:A0 or A0:A2
+    default:
+      Serial << F("coordIndex.  ERROR. arch1=") << arch1 << F(" arch2=") << arch2 << endl;
+      return ( 0 );
+      break;
+  }
+}
+
+// total coordination
+byte playerCoordination() {
+  return(
+    sC.settings.isPlayer[0] + sC.settings.isPlayer[1] + sC.settings.isPlayer[2] +
+    sC.settings.areCoordinated[0] + sC.settings.areCoordinated[1] + sC.settings.areCoordinated[2]
+  );
+}
 
