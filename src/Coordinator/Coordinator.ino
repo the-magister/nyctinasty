@@ -36,9 +36,6 @@ const uint32_t goodjobMinTime = 10UL * 1000UL;
 const uint32_t winningMinTime = 10UL * 1000UL;
 const uint32_t fanfareMinTime = 30UL * 1000UL;
 
-// defined below
-double calculateSmoothing(double updateInterval, double halfTime);
-
 // storage for running metrics
 double meanProxAvg[N_ARCH] = {30, 30, 30};
 double meanProxSD[N_ARCH] = {5, 5, 5};
@@ -46,14 +43,11 @@ double meanProxCV[N_ARCH] = {5/30*100, 5/30*100, 5/30*100};
 double meanProxVar[N_ARCH] = {5*5, 5*5, 5*5};
 
 // See decidePlayerState()
-const double isPlayerThreshold[N_ARCH] = {40, 40, 40};
-double playerSmoothing = calculateSmoothing( DISTANCE_SAMPLING_RATE, 1000.0 );
+const double playerSmoothing = 1000.0; // ms. Half-time to new reading (smoother).
+const double isPlayerThreshold[N_ARCH] = {40, 40, 40}; // compare: meanProxAvg
 
 // See decideCoordination()
-const double areCoordinatedThreshold[N_ARCH] = {25, 25, 25};
-
-// if we "win", how long do we do stuff for?
-const uint32_t fanfareDuration = 30UL * 1000UL; // seconds
+const double areCoordinatedThreshold[N_ARCH] = {25, 25, 25}; // compare: meanProxSD
 
 // ##################
 
@@ -138,10 +132,6 @@ void setup() {
 
   // for random numbers
   randomSeed(analogRead(0));
-
-  // print out
-  Serial << F("playerSmoothing=") << String(playerSmoothing,8) << endl;
-
 
   // by default, we'll generate the high voltage from the 3.3v line internally! (neat!)
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // initialize with the I2C addr 0x3C (for the 64x48)
@@ -400,13 +390,13 @@ void winningUpdate() {
 }
 
 // FANFARE state
-Metro fanfareInterval(fanfareDuration);
 void fanfareEnter() {
   genericStateEnter(FANFARE);
-  fanfareInterval.reset();
 }
 void fanfareUpdate() {
-  if ( fanfareInterval.check() ) stateMachine.transitionTo(Lonely);
+  if ( ! transitionLockoutExpired() ) return;
+
+  stateMachine.transitionTo(Lonely);
 }
 
 // algorithm for player detection
@@ -431,7 +421,8 @@ void decidePlayerState(byte arch) {
   double m = meanSensorProx(sAD[arch].dist.prox);
   
   // smooth it
-  performSmoothing(meanProxAvg[arch], meanProxVar[arch], m, playerSmoothing);
+  const double alpha = calculateSmoothing( DISTANCE_SAMPLING_RATE, playerSmoothing );
+  performSmoothing(meanProxAvg[arch], meanProxVar[arch], m, alpha);
 
   // check for player
   boolean isPlayer = meanProxAvg[arch] > isPlayerThreshold[arch];
@@ -532,19 +523,12 @@ byte coordIndex(byte arch1, byte arch2) {
   }
 }
 
-byte totalPlayersGE(byte th) {
-  return ( (sC.isPlayer[0] + sC.isPlayer[1] + sC.isPlayer[2]) >= th );
-}
-byte coordPlayersGE(byte th) {
-  return ( (sC.areCoordinated[0] + sC.areCoordinated[1] + sC.areCoordinated[2]) >= th );
-}
-
-byte playerCoordinationGE(byte th) {
+byte playerCoordinationGE(byte threshold) {
   return(
     sC.isPlayer[0] + sC.isPlayer[1] + sC.isPlayer[2] +
     sC.areCoordinated[0] + sC.areCoordinated[1] + sC.areCoordinated[2]
     
-    >= th
+    >= threshold
   );
 }
 
@@ -653,291 +637,6 @@ void showSettings() {
 
   updateInterval.reset();
 }
-
-
-
-/*
-  static String msg = "NOP";
-  if (Serial.available()) {
-   delay(100);
-   msg = Serial.readString();
-  }
-
-  const char sep = ',';
-  // loop across each arch's information
-  if( sAF[0].hasUpdate && sAF[1].hasUpdate && sAF[2].hasUpdate ){
-   uint32_t now = millis();
-
-   if( SHOW_FREQ_DEBUG ) {
-     // loop across each arch's information
-     for( byte a=0; a<N_ARCH; a++ ) {
-       // loop across each sensor
-       for( byte s=0; s<N_SENSOR; s++ ) {
-         Serial << msg << sep << now << sep << a << sep << s;
-         Serial << sep << sAF[a].freq.peakFreq[s];
-         Serial << sep << sAF[a].freq.avgPower[s];
-         for( byte b=0; b<N_FREQ_BINS; b++ ) {
-           Serial << sep << sAF[a].freq.power[s][b];
-         }
-         Serial << endl;
-       }
-     }
-   }
-
-   if( SHOW_COORD_DEBUG ) {
-     Serial << msg << sep << now;
-  //      concordanceByPower();
-     Serial << endl;
-   }
-
-   sAF[0].hasUpdate = sAF[1].hasUpdate = sAF[2].hasUpdate = false;
-  }
-*/
-
-double correlation_fast(uint16_t (&x)[N_SENSOR], uint16_t (&y)[N_SENSOR]) {
-
-  // sample size
-  const double n = N_SENSOR;
-
-  // loop over bins
-  double sumXY = 0;
-  double sumX = 0;
-  double sumY = 0;
-  double sumX2 = 0;
-  double sumY2 = 0;
-  for ( byte b = 0; b < (byte)n; b++ ) {
-    sumXY += x[b] * y[b];
-    sumX += x[b];
-    sumY += y[b];
-    sumX2 += x[b] * x[b];
-    sumY2 += y[b] * y[b];
-  }
-
-  double n1 = n * sumXY;
-  //  Serial << "n1 " << n1 << endl;
-  double n2 = sumX * sumY;
-  //  Serial << "n2 " << n2 << endl;
-  double d1 = sqrt(n * sumX2 - sumX * sumX);
-  //  Serial << "d1 " << d1 << endl;
-  double d2 = sqrt(n * sumY2 - sumY * sumY);
-  //  Serial << "d2 " << d2 << endl;
-  return ( (n1 - n2) / d1 / d2 );
-}
-
-
-double correlation_fast(double (&x)[N_FREQ_BINS], double (&y)[N_FREQ_BINS]) {
-
-  // sample size
-  const double n = N_FREQ_BINS;
-
-  // loop over bins
-  double sumXY = 0;
-  double sumX = 0;
-  double sumY = 0;
-  double sumX2 = 0;
-  double sumY2 = 0;
-  for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-    sumXY += x[b] * y[b];
-    sumX += x[b];
-    sumY += y[b];
-    sumX2 += x[b] * x[b];
-    sumY2 += y[b] * y[b];
-  }
-
-  double n1 = n * sumXY;
-  //  Serial << "n1 " << n1 << endl;
-  double n2 = sumX * sumY;
-  //  Serial << "n2 " << n2 << endl;
-  double d1 = sqrt(n * sumX2 - sumX * sumX);
-  //  Serial << "d1 " << d1 << endl;
-  double d2 = sqrt(n * sumY2 - sumY * sumY);
-  //  Serial << "d2 " << d2 << endl;
-  return ( (n1 - n2) / d1 / d2 );
-}
-
-double correlation_slow(double (&x)[N_FREQ_BINS], double (&y)[N_FREQ_BINS]) {
-
-  // sample size
-  const double n = N_FREQ_BINS;
-
-  //  Serial << endl;
-
-  // average
-  double xbar = 0;
-  double ybar = 0;
-  for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-    //    Serial << x[b] << ", " << y[b] << endl;
-    xbar += x[b];
-    ybar += y[b];
-  }
-  //  Serial << endl;
-  xbar /= n;
-  //  Serial << "xbar " << xbar << endl;
-  ybar /= n;
-  //  Serial << "ybar " << ybar << endl;
-
-  double num = 0;
-  double den1 = 0;
-  double den2 = 0;
-  for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-    double xdel = x[b] - xbar;
-    double ydel = y[b] - ybar;
-    num += xdel * ydel;
-    den1 += pow(xdel, 2.0);
-    den2 += pow(ydel, 2.0);
-  }
-  //  Serial << "num " << num << endl;
-
-  //  Serial << "den1 " << den1 << endl;
-  den1 = sqrt(den1);
-  //  Serial << "den1 " << den1 << endl;
-
-  //  Serial << "den2 " << den2 << endl;
-  den2 = sqrt(den2);
-  //  Serial << "den2 " << den2 << endl;
-
-  double ret = num / den1 / den2;
-  //  Serial << "ret " << ret << endl;
-
-  return ( ret );
-}
-
-void concordanceByPower() {
-
-  // sum the power information across each sensor for each arch
-  double power[N_ARCH][N_FREQ_BINS] = {{0}};
-  double avgPower[N_ARCH] = {0};
-  for ( byte a = 0; a < N_ARCH; a++ ) {
-    for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-      for ( byte s = 0; s < N_SENSOR; s++ ) {
-        power[a][b] += sAF[a].freq.power[s][b];
-      }
-      //      Serial << power[a][b] << " ";
-      power[a][b] = log(power[a][b]); // weight the high frequency stuff more
-    }
-    for ( byte s = 0; s < N_SENSOR; s++ ) {
-      avgPower[a] += sAF[a].freq.avgPower[s];
-    }
-    //    Serial << endl;
-  }
-
-  // compute
-  double corr01 = correlation_fast(power[0], power[1]); yield();
-  double corr12 = correlation_fast(power[1], power[2]); yield();
-  double corr20 = correlation_fast(power[2], power[0]); yield();
-
-  corr01 = pow(corr01, 2.0);
-  corr12 = pow(corr12, 2.0);
-  corr20 = pow(corr20, 2.0);
-
-  char sep = ',';
-  Serial << sep << corr01 << sep << corr12 << sep << corr20;
-  Serial << sep << avgPower[0] << sep << avgPower[1] << sep << avgPower[2];
-
-  uint16_t thresh = 40000;
-  double thresh2 = 0.6;
-  if ( avgPower[0] > thresh && avgPower[2] > thresh && corr20 > 0.6 ) {
-    Serial << sep << "C02";
-  } else {
-    Serial << sep << "c02";
-  }
-
-  /*
-    corr01 = correlation_slow(power[0], power[1]);
-    corr12 = correlation_slow(power[1], power[2]);
-    corr20 = correlation_slow(power[2], power[0]);
-
-    Serial << endl << corr01 << sep << corr12 << sep << corr20 << endl;
-  */
-}
-
-
-/*
-  void getConcordance() {
-
-  // this is all wrong.  need 2d correlation analysis
-  // https://en.wikipedia.org/wiki/Two-dimensional_correlation_analysis
-
-  // maybe we want to push this to a separate microcontroller, Sepal_Concordance
-  // alternately, each Arch can calculate their concordance clockwise (or ccw) and publish
-  // that
-
-  // normalize weights to sum to 1.0
-  static float vecWeight[N_FREQ_BINS] = {0.0};
-  // scale covariance terms
-  static float covTerm = 0.0;
-
-  // we can compute a few things once.
-  static float isInitialized = false;
-  if ( ! isInitialized ) {
-    float sumWeight = 0;
-    for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-      sumWeight += WeightFrequency[b];
-    }
-    for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-      vecWeight[b] = (float)WeightFrequency[b] / sumWeight;
-      covTerm += vecWeight[b] * vecWeight[b];
-    }
-    covTerm = 1.0 / (1.0 - covTerm);
-    isInitialized = true;
-  }
-
-  // weighted mean vector
-  float xBar[N_ARCH] = {0.0};
-  for ( byte j = 0; j < N_ARCH; j++ ) {
-    for ( byte i = 0; i < N_FREQ_BINS; i++ ) {
-      // this doesn't look quite right:
-      xBar[j] += vecWeight[j] * (float)sAF[myArch].freq.power[i][j];
-    }
-  }
-
-  // weighted covariance matrix
-  float Cov[N_ARCH][N_ARCH] = {0.0};
-  for ( byte a1 = 0; a1 < N_ARCH; a1++ ) {
-    for ( byte a2 = a1; a2 < N_ARCH; a2++ ) { // symmetry
-      float sum = 0.0;
-      for ( byte b = 0; b < N_FREQ_BINS; b++ ) {
-        sum += vecWeight[b] *
-               ((float)sAF[a1].freq[b] - xBar[a1]) *
-               ((float)sAF[a2].freq[b] - xBar[a2]);
-      }
-      Cov[a1][a2] = covTerm * sum;
-    }
-  }
-
-  // weighted correlation matrix
-  float Cor[N_ARCH][N_ARCH] = {0.0};
-  float Is[N_ARCH];
-  for ( byte a = 0; a < N_ARCH; a++ ) {
-    Is[a] = 1.0 / pow(Cov[a][a], 0.5);
-  }
-  for ( byte a1 = 0; a1 < N_ARCH; a1++ ) {
-    for ( byte a2 = a1; a2 < N_ARCH; a2++ ) { // symmetry
-      if ( a1 != a2 ) Cor[a1, a2] = Is[a1] * Cov[a1][a2] * Is[a2];
-    }
-  }
-
-  // save
-  switch ( myArch ) {
-    case 0: // A. B is next. C is prev.
-      concordNext = Cor[0, 1]; // corr.AB = mat.cor[1,2]
-      concordPrev = Cor[0, 2]; // corr.CA = mat.cor[1,3]
-      break;
-    case 1: // B. C is next. A is prev.
-      concordNext = Cor[1, 2]; // corr.BC = mat.cor[2,3]
-      concordPrev = Cor[0, 1]; // corr.AB = mat.cor[1,2]
-      break;
-    case 2: // C. A is next. B is prev.
-      concordNext = Cor[0, 2]; // corr.CA = mat.cor[1,3]
-      concordPrev = Cor[1, 2]; // corr.BC = mat.cor[2,3]
-      break;
-  }
-  concordTotal = (Cor[0, 1] + Cor[1, 2] + Cor[0, 2]) / 3.0;
-
-  }
-*/
-
-
 
 
 
