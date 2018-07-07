@@ -35,7 +35,7 @@ typedef struct {
 
 // distance data
 #define DISTANCE_SAMPLING_RATE 20UL // ms
-#define DISTANCE_SAMPLING_FREQ (1000UL/DISTANCE_SAMPLING_RATE) // 33.33 Hz
+#define DISTANCE_SAMPLING_FREQ (1000UL/DISTANCE_SAMPLING_RATE) // 50 Hz
 typedef struct {
 	// min and max range information
 	uint16_t min, max; // ADC limits
