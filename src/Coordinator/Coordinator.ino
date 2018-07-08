@@ -41,12 +41,15 @@ double meanProxAvg[N_ARCH] = {30, 30, 30};
 double meanProxSD[N_ARCH] = {5, 5, 5};
 double meanProxCV[N_ARCH] = {5/30*100, 5/30*100, 5/30*100};
 double meanProxVar[N_ARCH] = {5*5, 5*5, 5*5};
+double ratioCVAvg[N_ARCH] = {1.0, 1.0, 1.0};
+double ratioCVVar[N_ARCH] = {1.0, 1.0, 1.0};
 
 // See decidePlayerState()
 const double playerSmoothing = 1000.0; // ms. Half-time to new reading (smoother).
 const double isPlayerThreshold[N_ARCH] = {40, 40, 40}; // compare: meanProxAvg
 
 // See decideCoordination()
+const double coordSmoothing = 1000.0; // ms. Half-time to new reading (smoother).
 const double areCoordinatedThreshold[N_ARCH] = {25, 25, 25}; // compare: meanProxSD
 
 // ##################
@@ -459,15 +462,23 @@ void decideCoordination(byte arch1, byte arch2) {
   meanProxCV[arch1] = meanProxSD[arch1]/meanProxAvg[arch1]*100.0;
   meanProxCV[arch2] = meanProxSD[arch2]/meanProxAvg[arch2]*100.0;
 
+  // record CV difference
+  double rCV = abs(meanProxCV[arch1]-meanProxCV[arch2]);
+  
+  // smooth it
+  const double alpha = calculateSmoothing( DISTANCE_SAMPLING_RATE, coordSmoothing );
+  performSmoothing(ratioCVAvg[pair], ratioCVVar[pair], rCV, alpha);
+  
   // check coordination
   boolean areCoordinated = false;
 
   // if there are players in these arches, then they may be coordinated
-  if ( 
-    sC.isPlayer[arch1] == true && meanProxSD[arch1] > areCoordinatedThreshold[arch1] &&
-    sC.isPlayer[arch2] == true && meanProxSD[arch2] > areCoordinatedThreshold[arch2] ) {
-//    sC.isPlayer[arch1] == true && meanProxCV[arch1] > areCoordinatedThreshold[arch1] &&
-//    sC.isPlayer[arch2] == true && meanProxCV[arch2] > areCoordinatedThreshold[arch2] ) {
+  if ( sC.isPlayer[arch1] &&  sC.isPlayer[arch2] ) {
+    if( meanProxSD[arch1] > areCoordinatedThreshold[arch1] &&
+        meanProxSD[arch2] > areCoordinatedThreshold[arch2] ) 
+//    meanProxCV[arch1] > areCoordinatedThreshold[arch1] &&
+//    meanProxCV[arch2] > areCoordinatedThreshold[arch2] ) 
+
     areCoordinated = true;
   }
 
@@ -507,8 +518,8 @@ double calculateSmoothing(double updateInterval, double halfTime) {
 void performSmoothing(double &mean, double &var, double x, double alpha) {
   double diff = x - mean;
   double incr = alpha * diff;
-  mean = mean + incr;
-  var = (1.0-alpha)*(var + diff*incr);
+  mean = mean + incr; // also = (1-alpha)*mean + alpha*x
+  var = (1.0-alpha)*(var + diff*incr); // also = (1-alpha)*var + (alpha-alpha^2)*diff^2
 }
 
 byte coordIndex(byte arch1, byte arch2) {
@@ -537,6 +548,9 @@ uint32_t nextTransitionAllowedAt;
 uint32_t transitionLockoutTime;
 void resetTransitionLockout() {
   nextTransitionAllowedAt = millis() + transitionLockoutTime;
+}
+double deltaTransition() {
+  return( ( (double)millis() - (double)nextTransitionAllowedAt )/1000.0 );
 }
 boolean transitionLockoutExpired() {
   return ( millis() > nextTransitionAllowedAt );
@@ -600,21 +614,19 @@ void showSettings() {
   
   switch (sC.state) {
     case STARTUP: display.print("STARTUP"); break;  //  all roles start here
-    case LONELY:  display.print("LONELY "); break;   // 0 players
-    case OHAI:    display.print("OHAI   "); break;   // 1 players
+    case LONELY:  display.print("LONELY"); break;   // 0 players
+    case OHAI:    display.print("OHAI"); break;   // 1 players
     case GOODNUF: display.print("GOODNUF"); break;  // 2 players
     case GOODJOB: display.print("GOODJOB"); break;  // 3 players or 2 players coordinated
     case WINNING: display.print("WINNING"); break;  // 3 players and 2 players coordinated
     case FANFARE: display.print("FANFARE"); break;  // 3 players and 3 players coordinated
-    case REBOOT:  display.print("REBOOT "); break;   //  trigger to reboot
+    case REBOOT:  display.print("REBOOT"); break;   //  trigger to reboot
   }
-  if( sCT.tr.left ) display.print(" L");
-  else              display.print("  ");
-  if( sCT.tr.right ) display.println(" R");
-  else               display.println("  ");
-
+  String p = String(" ") + String(deltaTransition(), 1);
+  display.println(p);
+  
   for(byte i=0; i<N_ARCH; i++) {
-    String p = String("A") + String(i,10) + " ";
+    p = String("A") + String(i,10) + " ";
     p += String(meanProxAvg[i], 0);
     p += String(sC.isPlayer[i] ? " Y " : " n "); 
     p += String(" (") + String(meanProxSD[i], 0) + String(")") ;
@@ -624,11 +636,25 @@ void showSettings() {
     display.println(p);
   }
 
-  String p = String("Coord: ");
+  p = String("Coord: ");
   p += String(sC.areCoordinated[0] ? " Y " : " n ");
   p += String(sC.areCoordinated[1] ? " Y " : " n ");
   p += String(sC.areCoordinated[2] ? " Y " : " n ");
   display.println(p);
+
+  display.print("Tr: ");
+  if( sCT.tr.left ) display.print("L");
+  else              display.print("l");
+  if( sCT.tr.right ) display.println(" R");
+  else               display.println(" r");
+
+  // debug space
+  for(byte i=0; i<N_ARCH; i++) {
+    p = String("P") + String(i,10) + " ";
+    p += String(ratioCVAvg[i], 0);
+    p += String("(") + String(ratioCVVar[i], 0) + String(") ") ;
+    display.print(p);
+  }
 
   // push
   yield(); comms.update(); 
