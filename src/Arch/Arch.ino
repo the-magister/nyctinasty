@@ -6,7 +6,6 @@
 
 #include <Streaming.h>
 #include <Metro.h>
-#include <arduinoFFT.h>
 #include <SoftwareSerial.h>
 #include <SoftEasyTransfer.h>
 #include <FiniteStateMachine.h>
@@ -47,25 +46,30 @@ byte leftCoord, rightCoord;
 #define COLOR_CORRECTION TypicalLEDStrip
 #define NUM_PINS 4
 #define LEDS_BAR 3
-#define LEDS_VERT 20
-#define LEDS_PER_PIN LEDS_BAR+LEDS_VERT
+#define LEDS_DOWN 17
+#define LEDS_UP 13
+#define LEDS_DECK 4
 
-CRGBArray<LEDS_PER_PIN> leftBack;
-CRGBArray<LEDS_PER_PIN> rightBack;
-CRGBArray<LEDS_PER_PIN> leftFront;
-CRGBArray<LEDS_PER_PIN> rightFront;
+CRGBArray < LEDS_BAR + LEDS_DOWN > leftBack;
+CRGBArray < LEDS_BAR + LEDS_DOWN > rightBack;
+CRGBArray < LEDS_BAR + LEDS_UP + LEDS_DECK > leftFront;
+CRGBArray < LEDS_BAR + LEDS_UP + LEDS_DECK > rightFront;
 
 // bars
-CRGBSet rightBar1 = rightBack(0, LEDS_BAR-1);
-CRGBSet rightBar2 = rightFront(0, LEDS_BAR-1);
-CRGBSet leftBar1 = leftBack(0, LEDS_BAR-1);
-CRGBSet leftBar2 = leftFront(0, LEDS_BAR-1);
+CRGBSet rightBar1 = rightBack(0, LEDS_BAR - 1);
+CRGBSet rightBar2 = rightFront(0, LEDS_BAR - 1);
+CRGBSet leftBar1 = leftBack(0, LEDS_BAR - 1);
+CRGBSet leftBar2 = leftFront(0, LEDS_BAR - 1);
 
 // verticals
-CRGBSet leftUp = leftBack(LEDS_BAR, LEDS_PER_PIN-1);
-CRGBSet rightUp = rightBack(LEDS_BAR, LEDS_PER_PIN-1);
-CRGBSet leftDown = leftFront(LEDS_BAR, LEDS_PER_PIN-1);
-CRGBSet rightDown = rightFront(LEDS_BAR, LEDS_PER_PIN-1);
+CRGBSet leftUp = leftFront(LEDS_BAR, LEDS_BAR + LEDS_UP - 1);
+CRGBSet rightUp = rightFront(LEDS_BAR, LEDS_BAR + LEDS_UP - 1);
+CRGBSet leftDown = leftBack(LEDS_BAR, LEDS_BAR + LEDS_DOWN - 1);
+CRGBSet rightDown = rightBack(LEDS_BAR, LEDS_BAR + LEDS_DOWN - 1);
+
+// deck lights under rail
+CRGBSet leftDeck = leftFront(LEDS_BAR + LEDS_UP, LEDS_BAR + LEDS_UP + LEDS_DECK - 1);
+CRGBSet rightDeck = rightFront(LEDS_BAR + LEDS_UP, LEDS_BAR + LEDS_UP + LEDS_DECK - 1);
 
 // color choices, based on arch information
 const CHSV archColor[N_ARCH] = {
@@ -73,6 +77,9 @@ const CHSV archColor[N_ARCH] = {
   CHSV(HUE_GREEN, 255, 255),
   CHSV(HUE_BLUE, 255, 255)
 };
+
+// deck lighting
+CRGB deckColor = CRGB::FairyLight;
 
 // comms
 NyctComms comms;
@@ -85,7 +92,9 @@ void goodnuf(); State Goodnuf = State(goodnuf);
 void goodjob(); State Goodjob = State(goodjob);
 void winning(); State Winning = State(winning);
 void fanfare(); State Fanfare = State(fanfare);
-void reboot() { comms.reboot(); }; State Reboot = State(reboot);
+void reboot() {
+  comms.reboot();
+}; State Reboot = State(reboot);
 FSM stateMachine = FSM(Startup); // initialize state machine
 
 // incoming message storage and flag for update
@@ -95,24 +104,7 @@ struct sC_t {
 } sC;
 
 // our distance updates send as this structure as this topic
-const uint32_t distancePublishRate = 1000UL/15UL; // ms
 SepalArchDistance dist;
-
-// our frequency updates send as this structure as this topic
-// other frequency updates receive as this structure as this topic
-typedef struct {
-  boolean hasUpdate = false;
-  SepalArchFrequency freq;
-} sAF_t;
-sAF_t sAF[N_ARCH];
-
-// FFT object
-uint16_t buffer[N_SENSOR][N_FREQ_SAMPLES];
-boolean bufferReady = false;
-arduinoFFT FFT = arduinoFFT();
-
-// computed correspondence [-1,+1] between arches.
-float concordTotal, concordNext, concordPrev;
 
 // talk to the ADC device
 SoftwareSerial mySerial(RX, TX, false, 1024);
@@ -135,10 +127,10 @@ void setup() {
 
   // LEDs
   Serial << F("Configure leds...");
-  FastLED.addLeds<WS2811, D5, COLOR_ORDER>(leftBack, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
-  FastLED.addLeds<WS2811, D6, COLOR_ORDER>(rightBack, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
-  FastLED.addLeds<WS2811, D7, COLOR_ORDER>(leftFront, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
-  FastLED.addLeds<WS2811, D8, COLOR_ORDER>(rightFront, LEDS_PER_PIN).setCorrection(COLOR_CORRECTION);
+  FastLED.addLeds<WS2811, D5, COLOR_ORDER>(leftBack, leftBack.size()).setCorrection(COLOR_CORRECTION);
+  FastLED.addLeds<WS2811, D6, COLOR_ORDER>(rightBack, rightBack.size()).setCorrection(COLOR_CORRECTION);
+  FastLED.addLeds<WS2811, D7, COLOR_ORDER>(leftFront, leftFront.size()).setCorrection(COLOR_CORRECTION);
+  FastLED.addLeds<WS2811, D8, COLOR_ORDER>(rightFront, rightFront.size()).setCorrection(COLOR_CORRECTION);
   FastLED.setBrightness(255);
   Serial << F(" done.") << endl;
 
@@ -146,38 +138,30 @@ void setup() {
   comms.begin(myRole);
   myRole = comms.getRole();
   myArch = myRole - 1;
-  switch(myArch) {
-    case 0: 
+  switch (myArch) {
+    case 0:
       // sC.isPlayer indexes
-      leftArch=1; rightArch=2; 
+      leftArch = 1; rightArch = 2;
       // sC.areCoordinated indexes
-      leftCoord=0; rightCoord=2;
+      leftCoord = 0; rightCoord = 2;
       break;
-    case 1: 
-      leftArch=2; rightArch=0; 
-      leftCoord=1; rightCoord=0;
+    case 1:
+      leftArch = 2; rightArch = 0;
+      leftCoord = 1; rightCoord = 0;
       break;
-    case 2: 
-      leftArch=0; rightArch=1; 
-      leftCoord=2; rightCoord=1;
-      break;    
+    case 2:
+      leftArch = 0; rightArch = 1;
+      leftCoord = 2; rightCoord = 1;
+      break;
   }
   Serial << F("Arch indexes: left=") << leftArch << F(" my=") << myArch << F(" right=") << rightArch << endl;
   Serial << F("Coordination indexes: left=") << leftCoord << F(" right=") << rightCoord << endl;
-  
+
   // subscribe
   comms.subscribe(&sC.settings, &sC.hasUpdate);
-  for ( byte a = 0; a < N_ARCH; a++ ) {
-    // no need to subscribe to our own message
-    if ( a != myArch ) comms.subscribe(&sAF[a].freq, &sAF[a].hasUpdate, a);
-  }
 
   Serial << F("DISTANCE_SAMPLING_RATE, ms: ") << DISTANCE_SAMPLING_RATE << endl;
   Serial << F("DISTANCE_SAMPLING_FREQ, Hz: ") << DISTANCE_SAMPLING_FREQ << endl;
-  Serial << F("N_FREQ_SAMPLES, #: ") << N_FREQ_SAMPLES << endl;
-  Serial << F("FILL_TIME, ms: ") << FILL_TIME << endl;
-  Serial << F("Lowest Freq Bin, Hz: ") << (float)(0+1)*(float)DISTANCE_SAMPLING_FREQ/(float)N_FREQ_SAMPLES << endl;
-  Serial << F("Highest Freq Bin, Hz: ") << (float)(N_FREQ_BINS+1)*(float)DISTANCE_SAMPLING_FREQ/(float)N_FREQ_SAMPLES << endl;
 
   Serial << F("Startup complete.") << endl;
 }
@@ -186,22 +170,16 @@ void loop() {
   // comms handling
   comms.update();
 
-/*
-  // after 5 seconds, transition to Offline, but we could easily get directed to Online before that.
-  static Metro cycleTimeout(5000UL);
-  if( cycleTimeout.check() ) {
-    sC.settings.state = (systemState)((int)sC.settings.state+1);
-    if( sC.settings.state == REBOOT ) sC.settings.state = STARTUP;
-    sC.hasUpdate = true;
-    cycleTimeout.reset();
-  }
-*/
-
   // check for settings update
   if ( sC.hasUpdate ) {
     updateState();
+    
+    recordTransition();
     calculateCoordPalette();
     calculatePlayerPalette();
+
+    showTransition();
+    
     sC.hasUpdate = false;
   }
 
@@ -214,45 +192,39 @@ void loop() {
 
 CRGBPalette16 coordPalette;
 void calculateCoordPalette() {
-  
-  CRGBArray<16> pal;
-  
-  if( sC.settings.areCoordinated[leftCoord] ) {
-    pal.fill_gradient(archColor[leftArch], archColor[myArch], archColor[leftArch] );
-  } else {
-    pal = CRGB::Black;
-  }
-  if( sC.settings.areCoordinated[rightCoord] ) {
-    pal.fill_gradient(archColor[rightArch], archColor[myArch], archColor[rightArch] );
-  } else {
-    pal = CRGB::Black;
+
+  byte totalCoord = sC.settings.areCoordinated[0] + sC.settings.areCoordinated[1] + sC.settings.areCoordinated[2];
+
+  switch (totalCoord) {
+    case 0: coordPalette = CloudColors_p ; break;
+    case 1: coordPalette = LavaColors_p; break;
+    case 2: coordPalette = RainbowColors_p; break;
+    case 3: coordPalette = PartyColors_p; break;
   }
 
-  // copy out
-  for(byte i=0; i<16; i++) coordPalette[i] = pal[i];
 }
 
 CRGBPalette16 playerPaletteLeft, playerPaletteRight; // left, right
 void calculatePlayerPalette() {
-  
-  CHSV me = CHSV(archColor[myArch].hue, archColor[myArch].sat, 
-    sC.settings.isPlayer[myArch] ? 255 : 0
-  );
-  CHSV left = CHSV(archColor[leftArch].hue, archColor[leftArch].sat, 
-    sC.settings.isPlayer[leftArch] ? 255 : 0
-  );
-  CHSV right = CHSV(archColor[rightArch].hue, archColor[rightArch].sat, 
-    sC.settings.isPlayer[rightArch] ? 255 : 0
-  );
+
+  CHSV me = CHSV(archColor[myArch].hue, archColor[myArch].sat,
+                 sC.settings.isPlayer[myArch] ? 255 : 0
+                );
+  CHSV left = CHSV(archColor[leftArch].hue, archColor[leftArch].sat,
+                   sC.settings.isPlayer[leftArch] ? 255 : 0
+                  );
+  CHSV right = CHSV(archColor[rightArch].hue, archColor[rightArch].sat,
+                    sC.settings.isPlayer[rightArch] ? 255 : 0
+                   );
 
   CRGBArray<16> palLeft;
-  palLeft.fill_gradient(left, me, left);
+  palLeft.fill_gradient(me, left, me);
 
   CRGBArray<16> palRight;
-  palRight.fill_gradient(right, me, right);
- 
+  palRight.fill_gradient(me, right, me);
+
   // copy out
-  for(byte i=0; i<16; i++) {
+  for (byte i = 0; i < 16; i++) {
     playerPaletteLeft[i] = palLeft[i];
     playerPaletteRight[i] = palRight[i];
   }
@@ -275,17 +247,17 @@ void updateState() {
   }
 
   Serial << F("State change. to=");
-  switch( sC.settings.state ) {
+  switch ( sC.settings.state ) {
     case STARTUP: Serial << "STARTUP"; break;  //  all roles start here
-  
+
     case LONELY: Serial << "LONELY"; break;   // 0 players
     case OHAI: Serial << "OHAI"; break;   // 1 players
     case GOODNUF: Serial << "GOODNUF"; break;  // 2 players
     case GOODJOB: Serial << "GOODJOB"; break;  // 3 players or 2 players coordinated
     case WINNING: Serial << "WINNING"; break;  // 3 players and 2 players coordinated
-    case FANFARE: Serial << "FANFARE"; break;  // 3 players and 3 players coordinated 
-  
-    case REBOOT: Serial << "REBOOT"; break;   //  trigger to reboot 
+    case FANFARE: Serial << "FANFARE"; break;  // 3 players and 3 players coordinated
+
+    case REBOOT: Serial << "REBOOT"; break;   //  trigger to reboot
   }
   Serial << ". isPlayer? A0=" << sC.settings.isPlayer[0];
   Serial << " A1=" << sC.settings.isPlayer[1];
@@ -298,22 +270,20 @@ void updateState() {
 }
 
 void startup() {
-  
+
   static byte hue = archColor[myArch].hue;
-  EVERY_N_MILLISECONDS(10) {
+  EVERY_N_MILLISECONDS(20) {
     // show a throbbing rainbow background
-    hue++;
-    leftUp.fill_rainbow(hue, 255 / leftUp.size()); // paint
-    rightUp = leftUp;
-    leftDown.fill_rainbow(hue + 128, -255 / leftDown.size());
-    rightDown = leftFront;
+//    hue++;
+//    hue += 255 / leftBack.size();
+//    hue += random8(1, 255/leftBack.size());
+    hue += 5;
     
-    // color the bar with our color
-    leftBar1.fill_solid(archColor[myArch]);
-    rightBar2 = rightBar1 = leftBar2 = leftBar1;
-    
-    // do it now
-    pushToHardware();
+    leftBack.fill_rainbow(hue, 255 / leftBack.size()); // paint
+    leftFront.fill_rainbow(hue + 128, -255 / leftFront.size());
+
+    rightBack = leftBack;
+    rightFront = leftFront;
   }
 
 }
@@ -341,33 +311,114 @@ void winning() {
 
 void fanfare() {
   // need some kind of "yeah, playah!" animation
-  playerAndCoordinationUpdate();
+  startup(); // has a nice rainbow for us.
+   // these animations _add_ LED values and must be run last
+  addSomeSparkles();
+  addSomeBlame();
 }
 
 void playerAndCoordinationUpdate() {
-  updateTopsByCoordination();
-  updateLegsByPlayer();
+  // these animations _set_ LED values and must be run first
+  updateDeck();
+  updateTops();
+  updateLegs();
+  // these animations _add_ LED values and must be run last
+  addSomeSparkles();
+  addSomeBlame();
 }
 
-void updateTopsByCoordination() {
-  static byte colorIndex = 0;  
+void showTransition() {
+  // very special routine, as it gets to pushToHardware().
+  CRGB color = CRGB::White;
+  leftBack.fill_solid(color);
+  leftFront.fill_solid(color);
+  rightBack.fill_solid(color);
+  rightFront.fill_solid(color);
   
+  pushToHardware();
+
+  // should have the effect of strobing the whole structure on a state change.
+}
+
+void addSomeBlame() {
+  if( ! blamedForTransition() ) return; // blameless
+  if( deltaTransition() > 2000UL ) return; // enough shaming
+
+  // cylon white dot
   EVERY_N_MILLISECONDS( 20 ) {
+    uint16_t posLeft = beatsin16(120, 0, leftDown.size()-1);
+    uint16_t posRight = map(posLeft, 0, leftDown.size()-1, rightDown.size()-1, 0);
+    leftDown[posLeft] += 255;
+    rightDown[posRight] += 255;
+  }
+}
+
+void addSomeSparkles() {
+  // little strobes of color
+
+  EVERY_N_MILLISECONDS( 100 ) {
+    static byte which = 0;
+    static byte colorIndex = 0;
+    const byte dim = 64;
+
+    //    CRGB color = ColorFromPalette( CloudColors_p, colorIndex, brightness, LINEARBLEND );
+    CRGB color = CRGB::FairyLight;
+    color.fadeLightBy(dim);
+    
+    switch ( which ) {
+      case 0: leftUp[random8(leftUp.size())] += color; break;
+      case 1: rightUp[random8(rightUp.size())] += color; break;
+      case 2: leftDown[random8(leftDown.size())] += color; break;
+      case 3: rightDown[random8(rightDown.size())] += color; break;
+
+      case 4: leftDeck[random8(leftDeck.size())] += color; break;
+      case 5: rightDeck[random8(rightDeck.size())] += color; break;
+    }
+    which++;
+    if ( which >= 5 ) which = 0;
+    colorIndex ++;
+  }
+}
+
+
+void updateDeck() {
+  leftDeck.fill_solid(deckColor);
+  leftDeck.fadeLightBy( 64 ); // dim it
+
+  rightDeck = leftDeck;
+}
+
+void updateTops() {
+  static byte colorIndex = 0;
+
+  EVERY_N_MILLISECONDS( 20 ) {
+    
+    // lay down the basic pallete
     colorIndex ++;
     byte j = 0;
     for ( int i = 0; i < leftUp.size(); i++) {
       leftUp[i] = ColorFromPalette( coordPalette, colorIndex + j++, 255, LINEARBLEND );
     }
-    j = 0;
-    for ( int i = 0; i < rightUp.size(); i++) {
-      rightUp[i] = ColorFromPalette( coordPalette, colorIndex + j++, 255, LINEARBLEND );
-    }
-  }  
+    rightUp = leftUp;
+
+    // add some cylon with a speed proportional to total coordination
+    byte slowBPM = 20;
+    byte fastBPM = 60;
+    byte bpm = map(playerCoordination(), 0, 6, slowBPM, fastBPM);
+
+    uint16_t posLeft = beatsin16(bpm, 0, leftUp.size()-1);
+//    uint16_t posRight = map(posLeft, 0, leftUp.size()-1, rightUp.size()-1, 0);
+    uint16_t posRight = posLeft;
+    
+    leftUp[posLeft] = CRGB::Black;
+    rightUp[posRight] = CRGB::Black;
+    
+  }
 }
 
-void updateLegsByPlayer() {
+void updateLegs() {
   static byte colorIndex = 0;
-  
+
   EVERY_N_MILLISECONDS( 20 ) {
     colorIndex ++;
     byte j = 0;
@@ -378,49 +429,27 @@ void updateLegsByPlayer() {
     for ( int i = 0; i < rightDown.size(); i++) {
       rightDown[i] = ColorFromPalette( playerPaletteRight, colorIndex + j++, 255, LINEARBLEND );
     }
-  }  
+  }
 
 }
 
 void updateSensors() {
 
-/*
- * Order of operation is critical here.  We have three subsystems that use ISRs:
- *  FastLED: turns off ISRs
- *  WiFi: received information may be lost w/o ISR
- *  SoftwareSerial: received information may be lost w/o ISR
- *  
- *  From this, you can see that we need to be very careful with FastLED.show(), and 
- *  queue those up after we get SoftwareSerial data.  Can't really control when we get
- *  WiFi packets.
- *
- */
- 
- static uint32_t counter = 0;
-  static boolean publishReady = false;
-  static byte fftIndex = 0;
-  static Metro pushDistanceInterval(distancePublishRate);
+  /*
+     Order of operation is critical here.  We have three subsystems that use ISRs:
+      FastLED: turns off ISRs
+      WiFi: received information may be lost w/o ISR
+      SoftwareSerial: received information may be lost w/o ISR
 
-  // do FFT in segements when the buffer is ready
-  if ( bufferReady ) {
-    // compute
-    computeFFT(fftIndex);
+      From this, you can see that we need to be very careful with FastLED.show(), and
+      queue those up after we get SoftwareSerial data.  Can't really control when we get
+      WiFi packets.
 
-    // next sensor
-    fftIndex++;
+  */
 
-    // are we done?
-    if ( fftIndex >= N_SENSOR ) {
-      fftIndex = 0;
-      bufferReady = false;
-      publishReady = true;
-    }
-  }
-
-  // check to see if we need to pull new distance data.
-  // toggled TX pin
-  static boolean pinState = false;
   static Metro distanceUpdate(DISTANCE_SAMPLING_RATE);
+  static boolean pinState = false;
+  static uint32_t counter = 0;
 
   if ( distanceUpdate.check() ) {
     distanceUpdate.reset();
@@ -433,24 +462,11 @@ void updateSensors() {
     // just tracking actual distance update rate
     counter ++;
 
-    // fill buffer
-    fillBuffer();
-
     // update bar lights
     updateBarByDistance();
 
-    // I don't actually know if sending via WiFi will disrupt SoftwareSerial; worth a look.
-    if ( publishReady ) {
-      publishReady = false;
-      // publish
-      comms.publish(&sAF[myArch].freq, myArch);
-      // flag that our frequency data are ready
-      sAF[myArch].hasUpdate = true;
-    } else if( pushDistanceInterval.check() ) {
-      // publish distance
-      comms.publish(&dist, myArch);
-      pushDistanceInterval.reset();
-    }
+    // publish distance
+    comms.publish(&dist, myArch);
 
     // we need to update the LEDs now while we won't screw up SoftwareSerial and WiFi
     pushToHardware();
@@ -458,15 +474,15 @@ void updateSensors() {
 
   const uint32_t reportInterval = 10;
   EVERY_N_SECONDS( reportInterval ) {
-    uint32_t actualDISTANCE_SAMPLING_RATE = (reportInterval*1000UL)/counter;
+    uint32_t actualDISTANCE_SAMPLING_RATE = (reportInterval * 1000UL) / counter;
 
     Serial << F("Distance sample interval, actual=") << actualDISTANCE_SAMPLING_RATE;
     Serial << F(" hypothetical=") << DISTANCE_SAMPLING_RATE;
     Serial << F(" ms.") << endl;
-    
-    counter=0;
+
+    counter = 0;
   }
-  
+
 }
 
 // adjust lights on the bar with distance readings
@@ -476,9 +492,11 @@ void updateBarByDistance() {
   static CRGBArray<N_SENSOR> bar;
   for ( byte s = 0; s < N_SENSOR; s++ ) {
     // quash noise
-    if ( dist.prox[s] < dist.noise ) dist.prox[s] = dist.min;
+    uint16_t prox = dist.prox[s] < dist.noise ? dist.min : dist.prox[s];
+//    if ( dist.prox[s] < dist.noise ) dist.prox[s] = dist.min;
     uint16_t intensity = map(
-                           dist.prox[s],
+//                           dist.prox[s],
+                           prox,
                            dist.min, dist.max,
                            (uint16_t)0, (uint16_t)255
                          );
@@ -495,83 +513,6 @@ void updateBarByDistance() {
   rightBack[2] = rightFront[2] = bar[5];
 }
 
-// adjust lights on the down/legs with frequency readings
-void updateLegsByFrequency() {
-  // crappy
-  uint16_t avgPower[N_SENSOR] = {0};
-  // frequency power
-  uint16_t power[N_SENSOR][N_FREQ_BINS] = {{0.0}};
-
-  // do the boneheaded thing and sum up the bins across all sensors
-  uint32_t sumSensors[N_FREQ_BINS] = {0};
-  uint32_t maxSum = 0;
-  for ( uint16_t b = 0; b < N_FREQ_BINS ; b++ ) {
-    for ( byte s = 0; s < N_SENSOR; s++ ) {
-      sumSensors[b] += sAF[myArch].freq.power[s][b];
-    }
-    if ( sumSensors[b] > maxSum ) maxSum = sumSensors[b];
-  }
-
-  Serial << F("Freq bins: ");
-  // set the LEDs proportional to bins, normalized to maximum bin
-  for ( uint16_t b = 0; b < N_FREQ_BINS ; b++ ) {
-    uint32_t value = map( sumSensors[b],
-                          (uint32_t)0, maxSum,
-                          (uint32_t)0, (uint32_t)255
-                        );
-    Serial << value << ",";
-    leftDown[b] = CHSV(archColor[myArch].hue, archColor[myArch].sat, brighten8_video(constrain(value, 0, 255)));
-  }
-  Serial << endl;
-
-  rightDown = leftDown;
-}
-
-// adjust lights on down/legs with peak frequency readings
-void updateLegsByPeakFreq() {
-
-  // some constants
-  // maximum possible frequency bin
-  const byte maxFreq = ceil( (N_FREQ_BINS+1)*DISTANCE_SAMPLING_FREQ/N_FREQ_SAMPLES );
-  const byte minFreq = floor( (0+1)*DISTANCE_SAMPLING_FREQ/N_FREQ_SAMPLES );
-  const byte fadeEachUpdate = 128;
-  
-  // fade lighting
-  leftDown.fadeToBlackBy( fadeEachUpdate );
-
-  // loop across each arch's information
-  for( byte a=0; a<N_ARCH; a++ ) {
-    // loop across each sensor
-    for( byte s=0; s<N_SENSOR; s++ ) {
-      // get the integer frequency above and below
-      byte roundUp = ceil(sAF[a].freq.peakFreq[s]);
-      byte roundDown = floor(sAF[a].freq.peakFreq[s]);
-      
-      // map to lighting position
-      byte lightUp = map(roundUp, minFreq, maxFreq, 0, LEDS_VERT-1);
-      byte lightDown = map(roundDown, minFreq, maxFreq, 0, LEDS_VERT-1);
-      
-      // pick a color; my color is the brightest.
-      byte bright = 128;
-      if( a == myArch ) bright = 255;
-      CHSV color = CHSV(archColor[a].hue, 255, bright );
-
-      // apply
-      leftDown[lightUp] += color;
-      leftDown[lightDown] += color;
-    }
-    
-  }
-
-  // What immortal hand or eye / Could frame thy fearful symmetry?
-  rightDown = leftDown;
-}
-
-// update lights on the up/overhead with concordance readings
-void updateTopsByConcordance() {
-  // NOP
-}
-
 // show
 void pushToHardware() {
   FastLED.show();
@@ -583,144 +524,77 @@ void pushToHardware() {
   }
 }
 
-// storage
-void fillBuffer() {
-  // track the buffer index
-  static uint16_t index = 0;
-
-  // push to buffer
-  for ( byte i = 0; i < N_SENSOR; i++ ) buffer[i][index] = dist.prox[i];
-
-  // increment buffer index
-  index++;
-
-  if ( index >= N_FREQ_SAMPLES ) {
-    index = 0;
-    bufferReady = true;
-  }
+double calculateSmoothing(double updateInterval, double halfTime) {
+  // smooth
+  // updateInterval [=] ms; delta time between update to this function
+  // halfTime [=] ms; delta time for smoothed signal to transition halfway to new value
+  double samples = halfTime / updateInterval / log(2.0);
+  double alpha = 1.0-(samples-1.0)/samples;
+  return( alpha );
 }
 
-// show sensor readings
-void dumpBuffer(uint16_t count) {
-  const char sep = ',';
-
-  for ( uint16_t j = 0; j < N_FREQ_SAMPLES; j++) {
-    for ( uint16_t i = 0; i < N_SENSOR; i++ ) {
-      Serial << (uint16_t)buffer[i][j] << sep;
-    }
-    Serial << count << endl;
-  }
-  count ++;
+// http://people.ds.cam.ac.uk/fanf2/hermes/doc/antiforgery/stats.pdf
+double performSmoothing(double mean, double x, double alpha) {
+  double diff = x - mean;
+  double incr = alpha * diff;
+  mean = mean + incr;
+  return( mean );
 }
 
-// frequency calculations readings
-void dumpFFT() {
-  const char sep = ',';
-  unsigned long now = millis();
+// track transitions 
+uint32_t lastTransition;
+boolean myBlame;
+void recordTransition() {
 
-  for ( uint16_t i = 0; i < N_SENSOR; i++ ) {
-    Serial << now << sep << i << sep << sAF[myArch].freq.avgPower[i];
-    for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) {
-      Serial << sep << sAF[myArch].freq.power[i][j];
-    }
-    Serial << endl;
-  }
-}
-
-
-// https://cdn-learn.adafruit.com/downloads/pdf/fft-fun-with-fourier-transforms.pdf
-// Nyquist's Sampling Theorem: only frequencies up to half the sampling rate can
-// can be detected.  So, for 33 fps (Hz) we can detect signals no faster than 33/2 Hz.
-/*
-  Finally, the output of the FFT on real data has a few interesting properties:
-    The very first bin (bin zero) of the FFT output represents the average power of the signal.
-  Be careful not to try interpreting this bin as an actual frequency value!
-   Only the first half of the output bins represent usable frequency values. This means the
-  range of the output frequencies detected by the FFT is half of the sample rate. Don't try to
-  interpret bins beyond the first half in the FFT output as they won't represent real frequency
-  values!
-*/
-double imag[N_FREQ_SAMPLES];
-double real[N_FREQ_SAMPLES];
-#define SCL_INDEX 0x00
-#define SCL_TIME 0x01
-#define SCL_FREQUENCY 0x02
-void computeFFT(byte index) {
-  // track time
-  unsigned long tic = millis();
-
-  // crunch the buffer; expensive
-  const uint8_t exponent = FFT.Exponent(N_FREQ_SAMPLES); // can precompute to save a little time.
-
-  // storage.  fft computations alter the buffer, so we copy
-  for ( uint16_t j = 0; j < N_FREQ_SAMPLES ; j++ ) {
-    real[j] = (double)buffer[index][j];
-    imag[j] = 0.0;
-  }
-
-  // weigh data
-  FFT.Windowing(real, N_FREQ_SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);  /* Weigh data */
-  //    Serial.println("Weighed data:"); PrintVector(real, N_FREQ_SAMPLES, SCL_TIME);
-
-  // compute FFT
-  FFT.Compute(real, imag, N_FREQ_SAMPLES, exponent, FFT_FORWARD); /* Compute FFT */
-  //    Serial.println("Computed Real values:"); PrintVector(real, N_FREQ_SAMPLES, SCL_INDEX);
-  //    Serial.println("Computed Imaginary values:"); PrintVector(imag, N_FREQ_SAMPLES, SCL_INDEX);
-
-  // compute magnitudes
-//  FFT.ComplexToMagnitude(real, imag, N_FREQ_SAMPLES); /* Compute magnitudes */
-  // stealing a march here, as we don't need the magnitude information for the latter
-  // half of the array
-  FFT.ComplexToMagnitude(real, imag, N_FREQ_BINS + 2); /* Compute magnitudes */
-//  Serial.println("Computed magnitudes:");  PrintVector(real, (N_FREQ_SAMPLES >> 1), SCL_FREQUENCY);
-
-  // find major frequency peak
-  double peakFreq = FFT.MajorPeak(real, N_FREQ_SAMPLES, DISTANCE_SAMPLING_FREQ);
-//  if( index==5 ) Serial << F("Peak: ") << x << endl;
+  // did the transition involve me?
+  static boolean isPlayer, coordLeft, coordRight;
+  boolean n_isPlayer = sC.settings.isPlayer[myArch];
+  boolean n_coordLeft = sC.settings.areCoordinated[coordIndex(myArch, leftArch)];
+  boolean n_coordRight = sC.settings.areCoordinated[coordIndex(myArch, rightArch)];
   
-  // store power magnitudes of the lowest N_FREQ_BINS in the spectra
-  sAF[myArch].freq.avgPower[index] = (uint16_t)real[0];
-  for ( uint16_t j = 0; j < N_FREQ_BINS ; j++ ) sAF[myArch].freq.power[index][j] = (uint16_t)real[j + 1];
-
-  // store peak frequency
-  sAF[myArch].freq.peakFreq[index] = (float)peakFreq;
-  
-/*
-  unsigned long dur = (millis() - tic);
-  if ( index == 0 ) {
-    Serial << F("Last FFT complete.");
-    Serial << F(" duration=") << dur;
-    Serial << F(" ms.") << endl;
-  }
-  */
-}
-void PrintVector(double *vData, uint16_t bufferSize, uint8_t scaleType) {
-  for (uint16_t i = 0; i < bufferSize; i++)   {
-    double abscissa;
-    /* Print abscissa value */
-    switch (scaleType)
-    {
-      case SCL_INDEX:
-        abscissa = (i * 1.0);
-        break;
-      case SCL_TIME:
-        abscissa = ((i * 1.0) / DISTANCE_SAMPLING_FREQ);
-        break;
-      case SCL_FREQUENCY:
-        abscissa = ((i * 1.0 * DISTANCE_SAMPLING_FREQ) / (double)N_FREQ_SAMPLES);
-        break;
+  if( 
+    // did I add in or drop out?
+    n_isPlayer != isPlayer ||
+    // did I add or lose coordination with my left?
+    n_coordLeft != coordLeft ||
+    // did I add or lose coordination with my right?
+    n_coordRight != coordRight 
+    ) {
+      myBlame = true;
+    } else {
+      myBlame = false;
     }
-    Serial.print(abscissa, 6);
-    Serial.print(" ");
-    Serial.print(vData[i], 4);
-    Serial.println();
 
-    // Only the first half of the output bins represent usable frequency values.
-    if ( scaleType == SCL_FREQUENCY && i >= (bufferSize / 2 - 1) ) return;
+  isPlayer = n_isPlayer;
+  coordLeft = n_coordLeft;
+  coordRight = n_coordRight;
+  
+  lastTransition = millis();
+}
+uint32_t deltaTransition() {
+  return( millis() - lastTransition );
+}
+boolean blamedForTransition() {
+  return( myBlame );
+}
+// get pair index
+byte coordIndex(byte arch1, byte arch2) {
+  switch ( arch1 + arch2 ) {
+    case 1: return (0); break; // A0:A1 or A1:A0
+    case 3: return (1); break; // A1:A2 or A2:A1
+    case 2: return (2); break; // A2:A0 or A0:A2
+    default:
+      Serial << F("coordIndex.  ERROR. arch1=") << arch1 << F(" arch2=") << arch2 << endl;
+      return ( 0 );
+      break;
   }
-  Serial.println();
 }
 
-double mapd(double x, double in_min, double in_max, double out_min, double out_max) {
-    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+// total coordination
+byte playerCoordination() {
+  return(
+    sC.settings.isPlayer[0] + sC.settings.isPlayer[1] + sC.settings.isPlayer[2] +
+    sC.settings.areCoordinated[0] + sC.settings.areCoordinated[1] + sC.settings.areCoordinated[2]
+  );
 }
+

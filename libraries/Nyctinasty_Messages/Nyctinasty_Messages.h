@@ -7,16 +7,30 @@
 #define N_ARCH 3
 
 // system states. probably want to implement a FSM on each uC to work with these.
+/*
+  P = # players = 0,1,2,3
+  C = # coordinated pairs = 0,1,2,3
+  PC = P+C = 0..6
+
+  PC  State       Water
+  0   Lonely
+  1   Ohai  
+  2   Goodnuf     Fountain + 30% Duty
+  3     Goodnuf
+  4   Goodjob     60% Duty
+  5   Winning     100% Duty
+  6   Fanfare     100% Duty
+*/
 enum systemState {
 //	state		//	description
 	STARTUP=0,	//	all roles start here
 	
-	LONELY,		// 0 players
-	OHAI,		// 1 players
-	GOODNUF,	// 2 players
-	GOODJOB,	// 3 players or 2 players coordinated
-	WINNING, 	// 3 players and 2 players coordinated
-	FANFARE,	// 3 players and 3 players coordinated 
+	LONELY,		
+	OHAI,		
+	GOODNUF,	
+	GOODJOB,	
+	WINNING, 	
+	FANFARE,	
 	
 	REBOOT,		//  trigger to reboot 
 	N_STATES	//	as a counter/max
@@ -34,8 +48,8 @@ typedef struct {
 #define N_SENSOR 6
 
 // distance data
-#define DISTANCE_SAMPLING_RATE 10UL // ms
-#define DISTANCE_SAMPLING_FREQ (1000UL/DISTANCE_SAMPLING_RATE) // 100 Hz
+#define DISTANCE_SAMPLING_RATE 20UL // ms
+#define DISTANCE_SAMPLING_FREQ (1000UL/DISTANCE_SAMPLING_RATE) // 50 Hz
 typedef struct {
 	// min and max range information
 	uint16_t min, max; // ADC limits
@@ -44,6 +58,21 @@ typedef struct {
 	// proximity.  bigger numbers = closer to arch
 	uint16_t prox[N_SENSOR];
 } SepalArchDistance;
+
+// cannon trigger
+enum triggerState {
+	TRIGGER_OFF=0,
+	TRIGGER_ON
+};
+typedef struct {
+	// left and right trigger buttons.
+	triggerState left = TRIGGER_OFF;
+	triggerState right = TRIGGER_OFF;
+} CannonTrigger;
+
+
+
+// legacy below; not used
 
 // FFT analysis of the distance data
 #define N_FREQ_SAMPLES (uint16_t)(1<<8)  // This value MUST ALWAYS be a power of 2
@@ -69,15 +98,5 @@ typedef struct {
 	float peakFreq[N_SENSOR]={0};
 } SepalArchFrequency;
 
-// cannon trigger
-enum triggerState {
-	TRIGGER_OFF=0,
-	TRIGGER_ON
-};
-typedef struct {
-	// left and right trigger buttons.
-	triggerState left = TRIGGER_OFF;
-	triggerState right = TRIGGER_OFF;
-} CannonTrigger;
 
 #endif
