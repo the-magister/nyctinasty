@@ -197,7 +197,7 @@ void goodnuf() {
   switch (myRole) {
     case WaterRoute:  pinState[0] = duty(2,3);  pinState[1] = OFF;  break;
     case WaterPrime:  pinState[0] = ON;   pinState[1] = OFF;  break;
-    case WaterBoost:  pinState[0] = ON;   pinState[1] = OFF;  break;
+    case WaterBoost:  pinState[0] = ON;   pinState[1] = ON;  break;
   }
   applyToHardware();
 }
@@ -205,7 +205,7 @@ void goodjob() {
   switch (myRole) {
     case WaterRoute:  pinState[0] = duty(2,3);  pinState[1] = ON;  break;
     case WaterPrime:  pinState[0] = ON;   pinState[1] = ON;  break;
-    case WaterBoost:  pinState[0] = ON;   pingState[1] = OFF;  break;
+    case WaterBoost:  pinState[0] = ON;   pinState[1] = OFF;  break;
   }
   applyToHardware();
 }
