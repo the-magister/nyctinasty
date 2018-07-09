@@ -171,6 +171,7 @@ void loop() {
   comms.update();
 
   // check for settings update
+  systemState lastState;
   if ( sC.hasUpdate ) {
     updateState();
     
@@ -178,7 +179,11 @@ void loop() {
     calculateCoordPalette();
     calculatePlayerPalette();
 
-    showTransition();
+    // show strobe iff state changed.
+    if( sC.settings.state != lastState ) {
+      showTransition();
+      lastState = sC.settings.state;
+    }
     
     sC.hasUpdate = false;
   }
@@ -328,15 +333,15 @@ void playerAndCoordinationUpdate() {
 }
 
 void showTransition() {
-  // very special routine, as it gets to pushToHardware().
+
   CRGB color = CRGB::White;
+  color %= 128; // too garish
+
   leftBack.fill_solid(color);
   leftFront.fill_solid(color);
   rightBack.fill_solid(color);
   rightFront.fill_solid(color);
   
-  pushToHardware();
-
   // should have the effect of strobing the whole structure on a state change.
 }
 
@@ -356,7 +361,8 @@ void addSomeBlame() {
 void addSomeSparkles() {
   // little strobes of color
 
-  EVERY_N_MILLISECONDS( 100 ) {
+  EVERY_N_MILLISECONDS( 300 ) {
+    
     static byte which = 0;
     static byte colorIndex = 0;
     const byte dim = 64;
@@ -383,7 +389,7 @@ void addSomeSparkles() {
 
 void updateDeck() {
   leftDeck.fill_solid(deckColor);
-  leftDeck.fadeLightBy( 64 ); // dim it
+  leftDeck.fadeLightBy( 128 ); // dim it
 
   rightDeck = leftDeck;
 }

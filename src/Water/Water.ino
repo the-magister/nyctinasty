@@ -195,7 +195,7 @@ void ohai() {
 }
 void goodnuf() {
   switch (myRole) {
-    case WaterRoute:  pinState[0] = duty(3,7);  pinState[1] = OFF;  break;
+    case WaterRoute:  pinState[0] = duty(2,3);  pinState[1] = OFF;  break;
     case WaterPrime:  pinState[0] = ON;   pinState[1] = OFF;  break;
     case WaterBoost:  pinState[0] = ON;   pinState[1] = OFF;  break;
   }
@@ -203,9 +203,9 @@ void goodnuf() {
 }
 void goodjob() {
   switch (myRole) {
-    case WaterRoute:  pinState[0] = duty(3,2);  pinState[1] = ON;  break;
+    case WaterRoute:  pinState[0] = duty(2,3);  pinState[1] = ON;  break;
     case WaterPrime:  pinState[0] = ON;   pinState[1] = ON;  break;
-    case WaterBoost:  pinState[0] = ON;   pinState[1] = OFF;  break;
+    case WaterBoost:  pinState[0] = ON;   pingState[1] = OFF;  break;
   }
   applyToHardware();
 }
@@ -223,7 +223,7 @@ void fanfare() {
 }
 
 boolean duty(uint32_t timeOn, uint32_t secOff) {
-  const uint32_t mult = 100UL;
+  const uint32_t mult = 1000UL;
   static boolean state = false;
   static Metro onTime(mult*timeOn);
   static Metro offTime(mult*secOff);

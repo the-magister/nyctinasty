@@ -56,16 +56,16 @@ void fanfareEnter(); void fanfare(); void fanfareExit(); State Fanfare = State((
 #define GUNFIRE_START 950
 #define PALETTE_START 1000  // Palettes are 6 track blocks of related sounds(ohai,goodnuf,goodjob,winning,.pos change,neg change)
 
-#define LONELY_NUM 8
-#define OHAI_NUM 4
-#define FANFARE_NUM 4
-#define GOODNUF_NUM 1
-#define GOODJOB_NUM 1
-#define WINNING_NUM 1
-#define BEAT_NUM 6
-#define POS_CHANGE_NUM 7
-#define NEG_CHANGE_NUM 7
-#define GUNFIRE_NUM 1
+#define LONELY_NUM 10
+#define OHAI_NUM 14
+#define FANFARE_NUM 69
+#define GOODNUF_NUM 7  // 1
+#define GOODJOB_NUM 4  // 2
+#define WINNING_NUM 3  // 1
+#define BEAT_NUM 30
+#define POS_CHANGE_NUM 18
+#define NEG_CHANGE_NUM 22
+#define GUNFIRE_NUM 11
 #define PALETTE_NUM 0
 
 int COOR_START[(byte)N_STATES] = {0,0,OHAI_START,GOODNUF_START,GOODJOB_START,WINNING_START};
@@ -79,13 +79,14 @@ int fanefareTrack = -1;
 int corrChangedTrack = -1;
 int cannonTrack = -1;
 
-#define LONELY_PLAY_SPACING 30000l
+#define LONELY_PLAY_SPACING 180000l
 #define BEAT_CHANGE_SPACING 60000l
 
 Metro lonelyTimer(1UL);
 Metro ohaiLockoutTimer(1UL);
 Metro beatChangeTimer(1UL);
 Metro coorTimer(2000UL);
+Metro gunfireLockout(200UL);
 
 
 #define SINGLE_TRACK_DB -5
@@ -220,7 +221,7 @@ void switchState(systemState state) {
   switch ( state ) {
     case STARTUP: Serial << "Startup" << endl; stateMachine.transitionTo(Startup); break;
     //case SLAVED: stateMachine.transitionTo(Slaved); break;
-    //case REBOOT: stateMachine.transitionTo(Reboot); break;
+    case REBOOT: stateMachine.transitionTo(Reboot); break;
     //case REPROGRAM: stateMachine.transitionTo(Reprogram); break;
     
     case LONELY: Serial << "Lonely" << endl; stateMachine.transitionTo(Lonely); break;
@@ -424,17 +425,31 @@ boolean checkForLonely() {
 
 void updateCannon() {
   if ( cT.hasUpdate ) {
-    Serial << "Cannon. left=" << cT.cannon.left << " right=" << cT.cannon.right << endl;
+    //Serial << " millis: " << millis() << endl;
+    //Serial << "Cannon. left=" << cT.cannon.left << " right=" << cT.cannon.right << endl;
     if (cT.cannon.left || cT.cannon.right) {
-      if (cannonTrack != -1 && !tsunami.isTrackPlaying(cannonTrack)) {
-        tsunami.trackGain(cannonTrack,TWO_TRACKS_DB);   
+      Serial << "Cannon triggered" << endl;
+      // TODO: Restore this for the real game
+      
+      //if (!(stateMachine.isInState(Goodnuf) || stateMachine.isInState(Goodjob) || stateMachine.isInState(Winning) || stateMachine.isInState(Fanfare))) return; 
+      //Serial << "State is go" << endl;
+//      if (!tsunami.isTrackPlaying(cannonTrack)) {
+      if (cannonTrack == -1 && gunfireLockout.check()) {
+        cannonTrack = random(GUNFIRE_START, GUNFIRE_START+GUNFIRE_NUM);
+        Serial << "Playing cannon sound: " << cannonTrack <<  endl;
+ 
+        tsunami.trackGain(cannonTrack,0);   
+        tsunami.trackLoop(cannonTrack,true); 
         tsunami.trackPlayPoly(cannonTrack, 0, true);   
-        tsunami.trackLoop(cannonTrack,true);   
+        gunfireLockout.reset();
+        delay(50);
       } 
     }else {
       if (cannonTrack != -1) {
+        Serial << "Turning off cannon: " << cannonTrack << endl;
         tsunami.trackStop(cannonTrack);
         cannonTrack = -1;        
+        delay(50);
       }
     }
     cT.hasUpdate = false;
@@ -479,7 +494,8 @@ void changeCorrEntry(systemState currState, systemState newState, boolean loop) 
   }
   
   if (!loop) {
-  
+    if(COOR_NUM[(byte)newState] <= 0) return;
+
     corrTrack[(byte)newState] = random(COOR_START[(byte)newState], COOR_START[(byte)newState]+COOR_NUM[(byte)newState]);
     Serial << "Playing coor track: " << corrTrack[(byte)newState] << " state: " << ((byte)newState) << endl;
     tsunami.trackGain(corrTrack[(byte)newState],TWO_TRACKS_DB);   
@@ -525,6 +541,7 @@ void changeCorrUpdate(systemState state,boolean loop) {
   if (!coorTimer.check()) return;  // wait a bit after track ends
   
   if (loop) {
+    if(COOR_NUM[(byte)state] <= 0) return;
     corrTrack[(byte)state] = random(COOR_START[(byte)state], COOR_START[(byte)state]+COOR_NUM[(byte)state]);
     Serial << "Playing coor track: " << corrTrack[(byte)state] << " state: " << ((byte)state) << endl;
     tsunami.trackGain(corrTrack[(byte)state],TWO_TRACKS_DB);   
@@ -545,7 +562,7 @@ void lonelyEnter() {
     tsunami.stopAllTracks();  // Keep this here as safe guard cleanup
 
     lonelyTrack = random(LONELY_START, LONELY_START+LONELY_NUM);
-    Serial << "Playing idle track: " << lonelyTrack << endl;
+    Serial << "Playing lonely track: " << lonelyTrack << endl;
 
     tsunami.trackGain(lonelyTrack,SINGLE_TRACK_DB);   
     tsunami.trackLoop(lonelyTrack,false);   
@@ -581,7 +598,7 @@ void ohaiEnter() {
   if (cannonTrack != -1) {
     tsunami.trackStop(cannonTrack);
   }
-  cannonTrack = random(GUNFIRE_START, GUNFIRE_START+GUNFIRE_NUM);
+  //cannonTrack = random(GUNFIRE_START, GUNFIRE_START+GUNFIRE_NUM);
   changeCorrEntry((systemState)lastState.getId(), OHAI,false);
 }
 void ohai() {
@@ -593,10 +610,10 @@ void ohaiExit() {
 
 void goodnufEnter() {
   Serial << "Goodnuf enter" << " lastState: " << convStateToEnum(lastState) << endl;
-  changeCorrEntry((systemState)lastState.getId(), GOODNUF,true);
+  changeCorrEntry((systemState)lastState.getId(), GOODNUF,false);
 }
 void goodnuf() {
-  changeCorrUpdate(convStateToEnum(stateMachine.getCurrentState()),true);
+  changeCorrUpdate(convStateToEnum(stateMachine.getCurrentState()),false);
 }
 void goodnufExit() {
   changeCorrExit(convStateToEnum(stateMachine.getCurrentState()));
@@ -605,10 +622,10 @@ void goodnufExit() {
 void goodjobEnter() {
     Serial << "Goodjob enter" << " lastState: " << convStateToEnum(lastState) << endl;
 
-  changeCorrEntry((systemState)lastState.getId(), GOODJOB,true);
+  changeCorrEntry((systemState)lastState.getId(), GOODJOB,false);
 }
 void goodjob() {
-  changeCorrUpdate(convStateToEnum(stateMachine.getCurrentState()),true);
+  changeCorrUpdate(convStateToEnum(stateMachine.getCurrentState()),false);
 }
 void goodjobExit() {
   changeCorrExit(convStateToEnum(stateMachine.getCurrentState()));
@@ -616,10 +633,10 @@ void goodjobExit() {
 
 void winningEnter() {
     Serial << "Winning enter" << " lastState: " << convStateToEnum(lastState) << endl;
-  changeCorrEntry((systemState)lastState.getId(), WINNING,true);
+  changeCorrEntry((systemState)lastState.getId(), WINNING,false);
 }
 void winning() {
-  changeCorrUpdate(convStateToEnum(stateMachine.getCurrentState()),true);
+  changeCorrUpdate(convStateToEnum(stateMachine.getCurrentState()),false);
 }
 void winningExit() {
   changeCorrExit(convStateToEnum(stateMachine.getCurrentState()));
@@ -627,6 +644,9 @@ void winningExit() {
 
 
 void fanfareEnter() {
+    stopBeat();
+
+    // TODO: Add a definitive win sound
 }
 
 // Player reached the win condition.  Play a long(30s) win track

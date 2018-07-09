@@ -30,10 +30,10 @@
 // don't allow wild oscillations in state transitions. See resetTransitionLockout()
 const uint32_t startupMinTime = 3UL * 1000UL;
 const uint32_t lonelyMinTime = 1UL * 1000UL;
-const uint32_t ohaiMinTime = 10UL * 1000UL;
-const uint32_t goodnufMinTime = 10UL * 1000UL;
-const uint32_t goodjobMinTime = 10UL * 1000UL;
-const uint32_t winningMinTime = 10UL * 1000UL;
+const uint32_t ohaiMinTime = 8UL * 1000UL;
+const uint32_t goodnufMinTime = 8UL * 1000UL;
+const uint32_t goodjobMinTime = 8UL * 1000UL;
+const uint32_t winningMinTime = 8UL * 1000UL;
 const uint32_t fanfareMinTime = 30UL * 1000UL;
 
 // storage for running metrics
@@ -46,11 +46,12 @@ double ratioCVVar[N_ARCH] = {1.0, 1.0, 1.0};
 
 // See decidePlayerState()
 const double playerSmoothing = 1000.0; // ms. Half-time to new reading (smoother).
-const double isPlayerThreshold[N_ARCH] = {40, 40, 40}; // compare: meanProxAvg
+const double isPlayerThreshold[N_ARCH] = {45, 45, 45}; // compare: meanProxAvg
 
 // See decideCoordination()
-const double coordSmoothing = 1000.0; // ms. Half-time to new reading (smoother).
-const double areCoordinatedThreshold[N_ARCH] = {25, 25, 25}; // compare: meanProxSD
+const double coordSmoothing = 500.0; // ms. Half-time to new reading (smoother).
+const double areCoordinatedThreshold[N_ARCH] = {10, 10, 10}; // compare: ratioCVAvg
+const double areFlailingThreshold[N_ARCH] = {25, 25, 25}; // compare: meanProxSD
 
 // ##################
 
@@ -300,6 +301,7 @@ void loop() {
 const byte pc_Ohai = 1;
 const byte pc_Goodnuf = 2;
 const byte pc_Goodjob = 4;
+//const byte pc_Goodjob = 3;
 const byte pc_Winning = 5;
 const byte pc_Fanfare = 6;
 
@@ -474,11 +476,14 @@ void decideCoordination(byte arch1, byte arch2) {
 
   // if there are players in these arches, then they may be coordinated
   if ( sC.isPlayer[arch1] &&  sC.isPlayer[arch2] ) {
-    if( meanProxSD[arch1] > areCoordinatedThreshold[arch1] &&
-        meanProxSD[arch2] > areCoordinatedThreshold[arch2] ) 
+//    if( meanProxSD[arch1] > areCoordinatedThreshold[arch1] &&
+//        meanProxSD[arch2] > areCoordinatedThreshold[arch2] ) 
 //    meanProxCV[arch1] > areCoordinatedThreshold[arch1] &&
 //    meanProxCV[arch2] > areCoordinatedThreshold[arch2] ) 
-
+    if( ratioCVAvg[pair] < areCoordinatedThreshold[pair] &&
+        meanProxSD[arch1] > areFlailingThreshold[arch1] && 
+        meanProxSD[arch2] > areFlailingThreshold[arch2] )
+    
     areCoordinated = true;
   }
 
@@ -491,9 +496,9 @@ void decideCoordination(byte arch1, byte arch2) {
 
   if( SHOW_COORD_DEBUG ) {
     Serial << "decideCoordination.";
-    Serial << " pair0=" << meanProxSD[0];
-    Serial << " pair1=" << meanProxSD[1];
-    Serial << " pair2=" << meanProxSD[2];
+    Serial << " pair0=" << ratioCVAvg[0];
+    Serial << " pair1=" << ratioCVAvg[1];
+    Serial << " pair2=" << ratioCVAvg[2];
     Serial << endl;
   }
 
@@ -622,39 +627,27 @@ void showSettings() {
     case FANFARE: display.print("FANFARE"); break;  // 3 players and 3 players coordinated
     case REBOOT:  display.print("REBOOT"); break;   //  trigger to reboot
   }
-  String p = String(" ") + String(deltaTransition(), 1);
+  String p = String("    ") + String(deltaTransition(), 1);
   display.println(p);
-  
+
+  p = String("C") + String(playerCoordination(), 10) + ":";
+  for(byte i=0; i<N_ARCH; i++)  p += String(sC.isPlayer[i] ? "P" : "p");
+  for(byte i=0; i<N_ARCH; i++)  p += String(sC.areCoordinated[i] ? "C" : "c");
+  display.println(p);
+
   for(byte i=0; i<N_ARCH; i++) {
-    p = String("A") + String(i,10) + " ";
-    p += String(meanProxAvg[i], 0);
-    p += String(sC.isPlayer[i] ? " Y " : " n "); 
-    p += String(" (") + String(meanProxSD[i], 0) + String(")") ;
-//    p += String(" (") + String(meanProxCV[i], 0) + String(")") ;
-    p += String(meanProxSD[i] > areCoordinatedThreshold[i] ? " Y " : " n ");
-//    p += String(meanProxCV[i] > areCoordinatedThreshold[i] ? " Y " : " n ");
+    p = String(i,10) + " ";
+    p += "A" + String(meanProxAvg[i], 0);
+    p += " D" + String(meanProxSD[i], 0); 
+    p += " C" + String(ratioCVAvg[i], 0); 
     display.println(p);
   }
 
-  p = String("Coord: ");
-  p += String(sC.areCoordinated[0] ? " Y " : " n ");
-  p += String(sC.areCoordinated[1] ? " Y " : " n ");
-  p += String(sC.areCoordinated[2] ? " Y " : " n ");
-  display.println(p);
-
-  display.print("Tr: ");
-  if( sCT.tr.left ) display.print("L");
-  else              display.print("l");
+  display.print("Tr:");
+  if( sCT.tr.left ) display.print(" L");
+  else              display.print(" l");
   if( sCT.tr.right ) display.println(" R");
   else               display.println(" r");
-
-  // debug space
-  for(byte i=0; i<N_ARCH; i++) {
-    p = String("P") + String(i,10) + " ";
-    p += String(ratioCVAvg[i], 0);
-    p += String("(") + String(ratioCVVar[i], 0) + String(") ") ;
-    display.print(p);
-  }
 
   // push
   yield(); comms.update(); 
@@ -664,6 +657,14 @@ void showSettings() {
   updateInterval.reset();
 }
 
+
+// total coordination
+byte playerCoordination() {
+  return(
+    sC.isPlayer[0] + sC.isPlayer[1] + sC.isPlayer[2] +
+    sC.areCoordinated[0] + sC.areCoordinated[1] + sC.areCoordinated[2]
+  );
+}
 
 
 
