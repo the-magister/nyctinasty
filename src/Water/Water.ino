@@ -51,6 +51,13 @@ struct cT_t {
   CannonTrigger cannon;
 } cT;
 
+// try to alternate which pump is mostly used
+byte mainPump, subPump;
+
+// track which solenoid is which
+const byte cannonSol = 0;
+const byte fountainSol = 1;
+
 void applyToHardware() {
   static boolean lastState[4] = {true};
   boolean same = true;
@@ -84,6 +91,13 @@ void setup() {
   // subscribe
   comms.subscribe(&sC.settings, &sC.hasUpdate);
   comms.subscribe(&cT.cannon, &cT.hasUpdate);
+
+  // for random numbers
+  randomSeed(analogRead(0));
+  // pick a main pump on startup.  Ideally, we'll swap every 
+  mainPump = constrain(random(2), 0, 1); // 0 or 1
+  subPump = 1-mainPump;
+  Serial << F("Main pump=") << mainPump << F(" second pump=") << subPump << endl;
 
   Serial << F("Startup complete.") << endl;
 }
@@ -179,47 +193,64 @@ Winning    2           2
 
 void lonely() {
   switch (myRole) {
-    case WaterRoute:  pinState[0] = duty(0,1);  pinState[1] = OFF;   break;
-    case WaterPrime:  pinState[0] = OFF;  pinState[1] = OFF;  break;
-    case WaterBoost:  pinState[0] = OFF;  pinState[1] = OFF;  break;
+//    case WaterRoute:  pinState[0] = duty(0,1);  pinState[1] = OFF;   break;
+    case WaterRoute:  pinState[cannonSol] = OFF;  pinState[fountainSol] = OFF;  break;
+
+    case WaterPrime:  pinState[mainPump] = OFF;  pinState[subPump] = OFF;  break;
+    case WaterBoost:  pinState[mainPump] = OFF;  pinState[subPump] = OFF;  break;
   }
   applyToHardware();
 }
 void ohai() {
   switch (myRole) {
-    case WaterRoute:  pinState[0] = duty(0,1);  pinState[1] = OFF;   break;
-    case WaterPrime:  pinState[0] = ON;   pinState[1] = OFF;  break;
-    case WaterBoost:  pinState[0] = OFF;  pinState[1] = OFF;  break;
+//    case WaterRoute:  pinState[0] = duty(0,1);  pinState[1] = OFF;   break;
+    case WaterRoute:  pinState[cannonSol] = OFF;  pinState[fountainSol] = OFF;  break;
+    
+    case WaterPrime:  pinState[mainPump] = ON;   pinState[subPump] = OFF;  break;
+    case WaterBoost:  pinState[mainPump] = OFF;  pinState[subPump] = OFF;  break;
   }
   applyToHardware();
 }
 void goodnuf() {
   switch (myRole) {
-    case WaterRoute:  pinState[0] = duty(2,3);  pinState[1] = OFF;  break;
-    case WaterPrime:  pinState[0] = ON;   pinState[1] = OFF;  break;
-    case WaterBoost:  pinState[0] = ON;   pinState[1] = ON;  break;
+//    case WaterRoute:  pinState[0] = duty(2,3);  pinState[1] = OFF;  break;
+    case WaterRoute:  pinState[cannonSol] = triggerRight();  pinState[fountainSol] = !triggerLeft();  break;
+    
+    case WaterPrime:  pinState[mainPump] = ON;   pinState[subPump] = OFF;  break;
+    case WaterBoost:  pinState[mainPump] = ON;   pinState[subPump] = OFF;  break;
   }
   applyToHardware();
 }
 void goodjob() {
   switch (myRole) {
-    case WaterRoute:  pinState[0] = duty(2,3);  pinState[1] = ON;  break;
-    case WaterPrime:  pinState[0] = ON;   pinState[1] = ON;  break;
-    case WaterBoost:  pinState[0] = ON;   pinState[1] = OFF;  break;
+//    case WaterRoute:  pinState[0] = duty(2,3);  pinState[1] = ON;  break;
+    case WaterRoute:  pinState[cannonSol] = triggerRight();  pinState[fountainSol] = !triggerLeft();  break;
+    
+    case WaterPrime:  pinState[mainPump] = ON;   pinState[subPump] = ON;  break;
+    case WaterBoost:  pinState[mainPump] = ON;   pinState[subPump] = OFF;  break;
   }
   applyToHardware();
 }
 void winning() {
   switch (myRole) {
-    case WaterRoute:  pinState[0] = duty(10,0);  pinState[1] = ON;  break;
-    case WaterPrime:  pinState[0] = ON;   pinState[1] = ON;  break;
-    case WaterBoost:  pinState[0] = ON;   pinState[1] = ON;  break;
+//    case WaterRoute:  pinState[0] = duty(10,0);  pinState[1] = ON;  break;
+    case WaterRoute:  pinState[cannonSol] = triggerRight();  pinState[fountainSol] = !triggerLeft();  break;
+    
+    case WaterPrime:  pinState[mainPump] = ON;   pinState[subPump] = ON;  break;
+    case WaterBoost:  pinState[mainPump] = ON;   pinState[subPump] = ON;  break;
   }
   applyToHardware();
 }
 
 void fanfare() {
   winning();
+}
+
+boolean triggerRight() {
+  return( cT.cannon.right == TRIGGER_ON );
+}
+boolean triggerLeft() {
+  return( cT.cannon.left == TRIGGER_ON );
 }
 
 boolean duty(uint32_t timeOn, uint32_t secOff) {
