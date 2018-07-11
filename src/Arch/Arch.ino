@@ -171,7 +171,7 @@ void loop() {
   comms.update();
 
   // check for settings update
-  systemState lastState;
+  static systemState lastState;
   if ( sC.hasUpdate ) {
     updateState();
     
@@ -319,7 +319,6 @@ void fanfare() {
   startup(); // has a nice rainbow for us.
    // these animations _add_ LED values and must be run last
   addSomeSparkles();
-  addSomeBlame();
 }
 
 void playerAndCoordinationUpdate() {
@@ -555,8 +554,8 @@ void recordTransition() {
   // did the transition involve me?
   static boolean isPlayer, coordLeft, coordRight;
   boolean n_isPlayer = sC.settings.isPlayer[myArch];
-  boolean n_coordLeft = sC.settings.areCoordinated[coordIndex(myArch, leftArch)];
-  boolean n_coordRight = sC.settings.areCoordinated[coordIndex(myArch, rightArch)];
+  boolean n_coordLeft = sC.settings.areCoordinated[leftCoord];
+  boolean n_coordRight = sC.settings.areCoordinated[rightCoord];
   
   if( 
     // did I add in or drop out?

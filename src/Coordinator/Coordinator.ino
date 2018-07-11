@@ -30,10 +30,10 @@
 // don't allow wild oscillations in state transitions. See resetTransitionLockout()
 const uint32_t startupMinTime = 3UL * 1000UL;
 const uint32_t lonelyMinTime = 1UL * 1000UL;
-const uint32_t ohaiMinTime = 8UL * 1000UL;
-const uint32_t goodnufMinTime = 8UL * 1000UL;
-const uint32_t goodjobMinTime = 8UL * 1000UL;
-const uint32_t winningMinTime = 8UL * 1000UL;
+const uint32_t ohaiMinTime = 5UL * 1000UL;
+const uint32_t goodnufMinTime = 5UL * 1000UL;
+const uint32_t goodjobMinTime = 5UL * 1000UL;
+const uint32_t winningMinTime = 5UL * 1000UL;
 const uint32_t fanfareMinTime = 30UL * 1000UL;
 
 // storage for running metrics
@@ -45,13 +45,18 @@ double ratioCVAvg[N_ARCH] = {1.0, 1.0, 1.0};
 double ratioCVVar[N_ARCH] = {1.0, 1.0, 1.0};
 
 // See decidePlayerState()
+// We require that the average power from the sensors exceed a threshold to score a player
+//   as present.  
 const double playerSmoothing = 1000.0; // ms. Half-time to new reading (smoother).
-const double isPlayerThreshold[N_ARCH] = {45, 45, 45}; // compare: meanProxAvg
+double isPlayerThreshold[N_ARCH] = {45, 45, 45}; // compare: meanProxAvg
 
 // See decideCoordination()
-const double coordSmoothing = 500.0; // ms. Half-time to new reading (smoother).
-const double areCoordinatedThreshold[N_ARCH] = {10, 10, 10}; // compare: ratioCVAvg
-const double areFlailingThreshold[N_ARCH] = {25, 25, 25}; // compare: meanProxSD
+// We require that a pair of players have difference in CV (ratio of SD/Mean sensor readings) that is 
+//    lower than a theshold (coordination) AND both players have a SD of sensor readings greater than
+//    a threshold (activity) to score a coordinated pair.
+const double coordSmoothing = 1000.0; // ms. Half-time to new reading (smoother).
+double areCoordinatedThreshold[N_ARCH] = {10, 10, 10}; // compare: ratioCVAvg
+double areActiveThreshold[N_ARCH] = {25, 25, 25}; // compare: meanProxSD
 
 // ##################
 
@@ -120,7 +125,8 @@ void setup() {
   delay(500);
   Serial.begin(115200);
   Serial.setTimeout(5);
-
+  Serial.flush();
+  
   Serial << endl << endl << endl << F("Startup begins.") << endl;
 
   // configure comms
@@ -166,8 +172,6 @@ void setup() {
 void lookForSerialCommands() {
   if ( ! Serial.available() ) return;
 
-  static boolean trigger = false;
-
   stateLock = true;
 
   char c = Serial.read();
@@ -186,13 +190,11 @@ void lookForSerialCommands() {
 
       break;
     case 'T': {
-        trigger = !trigger;
-        CannonTrigger trig;
-        trig.left = trigger ? TRIGGER_ON : TRIGGER_OFF;
-        trig.right = trigger ? TRIGGER_ON : TRIGGER_OFF;
-
-        comms.publish(&trig);
-        Serial << "Trigger=" << trigger << endl;
+        char w = Serial.read();
+        if( w=='l' ) sCT.tr.left = sCT.tr.left == TRIGGER_ON ? TRIGGER_OFF : TRIGGER_ON;
+        if( w=='r' ) sCT.tr.right = sCT.tr.right == TRIGGER_ON ? TRIGGER_OFF : TRIGGER_ON;
+       
+        comms.publish(&sCT.tr);
         break;
       }
     case 'P': {
@@ -213,11 +215,38 @@ void lookForSerialCommands() {
         sendSettings();
         break;
       }
+    case 'p': {
+        int foo = Serial.parseInt();
+        isPlayerThreshold[0] = constrain(foo, 0, 1000);
+        isPlayerThreshold[1] = isPlayerThreshold[2] = isPlayerThreshold[0];
+        Serial << F("Setting player threshold=") << isPlayerThreshold[1] << endl;
+        stateLock = false;
+        break;
+      }
+    case 'a': {
+        int foo = Serial.parseInt();
+        areActiveThreshold[0] = constrain(foo, 0, 1000);
+        areActiveThreshold[1] = areActiveThreshold[2] = areActiveThreshold[0];
+        Serial << F("Setting activity threshold=") << areActiveThreshold[1] << endl;
+        stateLock = false;
+        break;
+      }    
+    case 'c': {
+        int foo = Serial.parseInt();
+        areCoordinatedThreshold[0] = constrain(foo, 0, 1000);
+        areCoordinatedThreshold[1] = areCoordinatedThreshold[2] = areCoordinatedThreshold[0];
+        Serial << F("Setting coordination threshold=") << areCoordinatedThreshold[1] << endl;
+        stateLock = false;
+        break;
+      }
     case '\n': break;
     case '\r': break;
     default:
       Serial << F("(s)tartup, (l)onely, (o)hai, good(n)uf, (g)oodjob, (w)inning, (f)anfare, (r)eboot.") << endl;
-      Serial << F("un(L)ock game state. (T)rigger cannon.") << endl;
+      Serial << F("un(L)ock game state. (T)rigger (l)eft or (r)ight cannon.") << endl;
+      Serial << F("(p)(0-1000) set player threshold.") << endl;
+      Serial << F("(a)(0-1000) set activity threshold.") << endl;
+      Serial << F("(c)(0-1000) set coord threshold.") << endl;
       Serial << F("(P)(0-2) toggle player state: A0, A1, A2.") << endl;
       Serial << F("(C)(0-2) toggle player state: A0:A1, A1:A2, A2:A0.") << endl;
       sendSettings();
@@ -481,8 +510,8 @@ void decideCoordination(byte arch1, byte arch2) {
 //    meanProxCV[arch1] > areCoordinatedThreshold[arch1] &&
 //    meanProxCV[arch2] > areCoordinatedThreshold[arch2] ) 
     if( ratioCVAvg[pair] < areCoordinatedThreshold[pair] &&
-        meanProxSD[arch1] > areFlailingThreshold[arch1] && 
-        meanProxSD[arch2] > areFlailingThreshold[arch2] )
+        meanProxSD[arch1] > areActiveThreshold[arch1] && 
+        meanProxSD[arch2] > areActiveThreshold[arch2] )
     
     areCoordinated = true;
   }
@@ -637,8 +666,8 @@ void showSettings() {
 
   for(byte i=0; i<N_ARCH; i++) {
     p = String(i,10) + " ";
-    p += "A" + String(meanProxAvg[i], 0);
-    p += " D" + String(meanProxSD[i], 0); 
+    p += "P" + String(meanProxAvg[i], 0);
+    p += " A" + String(meanProxSD[i], 0); 
     p += " C" + String(ratioCVAvg[i], 0); 
     display.println(p);
   }

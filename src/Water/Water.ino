@@ -94,7 +94,7 @@ void setup() {
 
   // for random numbers
   randomSeed(analogRead(0));
-  // pick a main pump on startup.  Ideally, we'll swap every 
+  // pick a main pump on startup.  Ideally, we'll swap every startup
   mainPump = constrain(random(2), 0, 1); // 0 or 1
   subPump = 1-mainPump;
   Serial << F("Main pump=") << mainPump << F(" second pump=") << subPump << endl;
