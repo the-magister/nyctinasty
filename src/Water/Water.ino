@@ -214,7 +214,8 @@ void ohai() {
 void goodnuf() {
   switch (myRole) {
 //    case WaterRoute:  pinState[0] = duty(2,3);  pinState[1] = OFF;  break;
-    case WaterRoute:  pinState[cannonSol] = triggerRight();  pinState[fountainSol] = !triggerLeft();  break;
+//    case WaterRoute:  pinState[cannonSol] = triggerRight();  pinState[fountainSol] = !triggerLeft();  break;
+    case WaterRoute:  pinState[cannonSol] = triggerRight();  pinState[fountainSol] = triggerLeft();  break;
     
     case WaterPrime:  pinState[mainPump] = ON;   pinState[subPump] = OFF;  break;
     case WaterBoost:  pinState[mainPump] = ON;   pinState[subPump] = OFF;  break;
@@ -224,7 +225,8 @@ void goodnuf() {
 void goodjob() {
   switch (myRole) {
 //    case WaterRoute:  pinState[0] = duty(2,3);  pinState[1] = ON;  break;
-    case WaterRoute:  pinState[cannonSol] = triggerRight();  pinState[fountainSol] = !triggerLeft();  break;
+//    case WaterRoute:  pinState[cannonSol] = triggerRight();  pinState[fountainSol] = !triggerLeft();  break;
+    case WaterRoute:  pinState[cannonSol] = triggerRight();  pinState[fountainSol] = triggerLeft();  break;
     
     case WaterPrime:  pinState[mainPump] = ON;   pinState[subPump] = ON;  break;
     case WaterBoost:  pinState[mainPump] = ON;   pinState[subPump] = OFF;  break;
@@ -234,7 +236,8 @@ void goodjob() {
 void winning() {
   switch (myRole) {
 //    case WaterRoute:  pinState[0] = duty(10,0);  pinState[1] = ON;  break;
-    case WaterRoute:  pinState[cannonSol] = triggerRight();  pinState[fountainSol] = !triggerLeft();  break;
+//    case WaterRoute:  pinState[cannonSol] = triggerRight();  pinState[fountainSol] = !triggerLeft();  break;
+    case WaterRoute:  pinState[cannonSol] = triggerRight();  pinState[fountainSol] = triggerLeft();  break;
     
     case WaterPrime:  pinState[mainPump] = ON;   pinState[subPump] = ON;  break;
     case WaterBoost:  pinState[mainPump] = ON;   pinState[subPump] = ON;  break;

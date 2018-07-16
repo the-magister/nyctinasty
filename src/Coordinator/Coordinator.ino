@@ -55,8 +55,12 @@ double isPlayerThreshold[N_ARCH] = {45, 45, 45}; // compare: meanProxAvg
 //    lower than a theshold (coordination) AND both players have a SD of sensor readings greater than
 //    a threshold (activity) to score a coordinated pair.
 const double coordSmoothing = 1000.0; // ms. Half-time to new reading (smoother).
-double areCoordinatedThreshold[N_ARCH] = {10, 10, 10}; // compare: ratioCVAvg
-double areActiveThreshold[N_ARCH] = {25, 25, 25}; // compare: meanProxSD
+double areCoordinatedThreshold[N_ARCH] = {25, 25, 25}; // compare: ratioCVAvg
+double areActiveThreshold[N_ARCH] = {20, 20, 20}; // compare: meanProxSD
+
+// too hard? 
+//double areCoordinatedThreshold[N_ARCH] = {10, 10, 10}; // compare: ratioCVAvg
+//double areActiveThreshold[N_ARCH] = {25, 25, 25}; // compare: meanProxSD
 
 // ##################
 
@@ -636,7 +640,7 @@ void sendSettings() {
 }
 
 void showSettings() {
-  static Metro updateInterval(333UL);
+  static Metro updateInterval(1000UL);
   if( !updateInterval.check() ) return;
 
   // show status; about 40 ms to show this update.

@@ -16,6 +16,11 @@ NyctRole myRole = Fanfaring; // see Nyctinasty_Comms.h; set N_ROLES to pull from
 // comms
 NyctComms comms;
 
+struct cT_t {
+  boolean hasUpdate = false;
+  CannonTrigger cannon;
+} cT;
+
 // publish system state
 SystemCommand sC;
 void setup() {
@@ -31,13 +36,15 @@ void setup() {
 
   Serial << "Publishing..." << endl;
   
+  comms.subscribe(&cT.cannon, &cT.hasUpdate);
+
   while( ! comms.isConnected() ) {
     delay(500);
     comms.update();
   }
-  sC.state = WINNING;
+  sC.state = LONELY;
   comms.publish(&sC);
-  
+
   Serial << F("Startup complete.") << endl;
 }
 
@@ -45,10 +52,40 @@ void loop() {
   // comms handling
   comms.update();
 
-  static Metro publishInterval(2000UL);
-  if( publishInterval.check() ) {
-    sC.state = FANFARE;
+  static Metro timeout(60UL * 1000UL);
+  if( timeout.check() ) {
+    sC.state = LONELY;
     comms.publish(&sC);
+    Serial << "Not triggered.  LONELY." << endl;
   }
+
+  // check for settings update
+  if ( cT.hasUpdate && ( cT.cannon.left == TRIGGER_ON || cT.cannon.right == TRIGGER_ON )) {
+    Serial << "Cannon. left=" << cT.cannon.left << " right=" << cT.cannon.right << endl;
+    cT.hasUpdate = false;
+  
+    if( sC.state != FANFARE ) {
+      Serial << "Triggered.  FANFARE." << endl;
+      sC.state = OHAI;  
+      comms.publish(&sC);
+      delay(1000);
+      sC.state = GOODNUF;  
+      comms.publish(&sC);
+      delay(1000);
+      sC.state = GOODJOB;  
+      comms.publish(&sC);
+      delay(1000);
+      sC.state = WINNING;  
+      comms.publish(&sC);
+      delay(1000);
+      sC.state = FANFARE;  
+      comms.publish(&sC);
+    }
+
+    timeout.reset();
+  }
+
+  
+
 }
 
